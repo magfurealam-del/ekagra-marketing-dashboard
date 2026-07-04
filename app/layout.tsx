@@ -3,8 +3,8 @@ import './globals.css'
 import Nav from '@/components/Nav'
 
 export const metadata: Metadata = {
-  title: 'Ekagra Marketing Intelligence',
-  description: 'Marketing performance, attribution, and CRM ops dashboard',
+  title: 'Ekagra Health — Ads Intelligence',
+  description: 'Meta Ads performance and marketing intelligence for Ekagra Health',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
