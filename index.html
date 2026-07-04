@@ -585,6 +585,7 @@ function renderTypeChart(){
     {label:'Conversations',data:types.map(e=>e[1].cv),backgroundColor:types.map((_,i)=>PAL[i%PAL.length]+'BB'),borderRadius:4,yAxisID:'y'},
     {label:'Leads',data:types.map(e=>e[1].ld),backgroundColor:'rgba(192,144,240,.55)',borderRadius:4,yAxisID:'y'},
     {type:'line',label:'CPR ($)',data:types.map(e=>e[1].cv>0?e[1].sp/e[1].cv:0),borderColor:'#F08080',borderWidth:2,pointRadius:5,tension:.3,yAxisID:'y2'},
+    {type:'line',label:'Cost/Lead ($)',data:types.map(e=>e[1].ld>0?e[1].sp/e[1].ld:0),borderColor:'#C090F0',borderWidth:2,pointRadius:5,tension:.3,borderDash:[3,2],yAxisID:'y2'},
     {type:'line',label:`Avg CPR ($${avgCPR.toFixed(2)})`,data:types.map(()=>avgCPR),borderColor:'rgba(248,200,80,.4)',borderWidth:1.5,borderDash:[6,3],pointRadius:0,yAxisID:'y2'},
   ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
     plugins:{legend:{position:'top',labels:{font:{size:10},usePointStyle:true,boxWidth:8,color:TC}}},
@@ -636,20 +637,22 @@ async function pageGet(path,p={}){
 }
 async function loadLeadForms(){
   if(!CFG.pageId||!CFG.pageTok){ renderLeadForms(null,[]); return; }
-  const forms=(await pageGet(`${CFG.pageId}/leadgen_forms`,{fields:'id,name,leads_count,status',limit:100})).data||[];
-  // Per-form lead timestamps, bounded per form, to build a "leads over time" chart
-  // for the currently selected date range — this is real Meta-reported data, not
-  // a fabricated metric.
+  // NOTE: `leads_count` is not a valid field on the leadgen_forms edge in this API
+  // version (Meta returns error #100 for it) — total counts have to come from the
+  // /leads edge's `summary.total_count` instead, per form.
+  const forms=(await pageGet(`${CFG.pageId}/leadgen_forms`,{fields:'id,name,status',limit:100})).data||[];
   const sinceMs=new Date(S.since).getTime(), untilMs=new Date(S.until).getTime()+86400000;
   const allLeads=[];
   for(const f of forms){
     try{
-      const d=await pageGet(`${f.id}/leads`,{fields:'created_time',limit:200});
+      const d=await pageGet(`${f.id}/leads`,{fields:'created_time',limit:200,summary:'true'});
+      f.totalCount=d.summary?.total_count??null;
+      f.fetchedCount=(d.data||[]).length;
       (d.data||[]).forEach(l=>{
         const t=new Date(l.created_time).getTime();
         if(t>=sinceMs&&t<=untilMs)allLeads.push({date:l.created_time.slice(0,10),form:f.name});
       });
-    }catch(e){/* skip forms this token can't read */}
+    }catch(e){ f.fetchError=e.message; }
   }
   renderLeadForms(forms,allLeads);
 }
@@ -662,9 +665,12 @@ function renderLeadForms(forms,leads){
       </div>`;
     return;
   }
-  const rows=(forms||[]).map(f=>`<tr><td>${f.name}</td><td><span class="pill ${f.status==='ACTIVE'?'p-a':'p-p'}">${f.status}</span></td><td style="text-align:right;font-weight:700;color:#E8EDF2">${f.leads_count??'—'}</td></tr>`).join('')||`<tr><td colspan="3" style="text-align:center;padding:16px;color:#4A6A7A">No lead forms found for this Page.</td></tr>`;
+  const rows=(forms||[]).map(f=>{
+    const countLabel=f.totalCount!=null?f.totalCount:f.fetchError?`⚠ ${f.fetchError}`:f.fetchedCount!=null?`${f.fetchedCount}+ (recent, no total available)`:'—';
+    return `<tr><td>${f.name}</td><td><span class="pill ${f.status==='ACTIVE'?'p-a':'p-p'}">${f.status}</span></td><td style="text-align:right;font-weight:700;color:#E8EDF2">${countLabel}</td></tr>`;
+  }).join('')||`<tr><td colspan="3" style="text-align:center;padding:16px;color:#4A6A7A">No lead forms found for this Page.</td></tr>`;
   $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms (Meta submission counts)</div>
-    <div class="card" style="margin-bottom:12px"><table class="dt"><thead><tr><th>Form</th><th>Status</th><th style="text-align:right">Total leads (all-time)</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card" style="margin-bottom:12px"><table class="dt"><thead><tr><th>Form</th><th>Status</th><th style="text-align:right">Total leads</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="stl">Leads over time — selected date range</div>
     <div class="card" style="margin-bottom:12px"><div style="position:relative;height:180px"><canvas id="cLeadsTime"></canvas></div></div>
     <div class="stl">Other Page-level graphs worth adding</div>
@@ -816,7 +822,7 @@ function renderDeepDiveBody(){
     <div class="ddm-m"><div class="ddm-m-v" style="color:${avgFreq>2.5?'#F08080':'#E8EDF2'}">${avgFreq.toFixed(2)}</div><div class="ddm-m-l">Avg frequency</div></div>
   </div>`;
 
-  const toggles=[['spend_ctr','Spend vs CTR'],['cpr_cpm','CPR vs CPM'],['convos_freq','Conversations vs Frequency'],['convos_leads','Conversations vs Leads']];
+  const toggles=[['spend_ctr','Spend vs CTR'],['cpr_cpm','CPR vs CPM'],['cpr_costlead','CPR vs Cost/Lead'],['convos_freq','Conversations vs Frequency'],['convos_leads','Conversations vs Leads']];
   const toggleHtml=`<div class="ddm-metric-toggle">${toggles.map(([k,l])=>`<button class="mtb ${S.ddmMetric===k?'active':''}" onclick="setDDMMetric('${k}')">${l}</button>`).join('')}</div>`;
 
   const rowsHtml=rows.map(r=>{
@@ -858,6 +864,13 @@ function renderDeepDiveChart(rows){
     datasets=[
       {type:'line',label:'CPR ($)',data:rows.map(r=>getCPR(r)),borderColor:'#F08080',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y'},
       {type:'line',label:'CPM ($)',data:rows.map(r=>+r.cpm||0),borderColor:'#78A8E0',borderWidth:2,pointRadius:2,tension:.3,borderDash:[4,3],yAxisID:'y2'},
+    ];
+  }else if(S.ddmMetric==='cpr_costlead'){
+    // Both are cost-per-outcome in $ — plotted on the same axis so they're
+    // directly comparable at a glance, rather than split across two scales.
+    datasets=[
+      {type:'line',label:'CPR ($ per conversation)',data:rows.map(r=>getCPR(r)),borderColor:'#F08080',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y'},
+      {type:'line',label:'Cost/Lead ($)',data:rows.map(r=>{const ld=getLeads(r);return ld>0?(+r.spend||0)/ld:null;}),borderColor:'#C090F0',borderWidth:2,pointRadius:2,tension:.3,spanGaps:true,yAxisID:'y'},
     ];
   }else if(S.ddmMetric==='convos_freq'){
     datasets=[
