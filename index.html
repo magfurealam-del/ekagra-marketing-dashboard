@@ -271,7 +271,7 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
   <div class="emsg"></div>
   <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
     <select id="fSt" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px">
-      <option value="all">All statuses</option><option value="ACTIVE">Active only</option><option value="PAUSED">Paused</option>
+      <option value="all">All statuses</option><option value="ACTIVE" title="Meta status = Active AND spend > 0 in this range">Active &amp; spending</option><option value="PAUSED">Paused / not spending</option>
     </select>
     <select id="fTy" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px"><option value="all">All types</option></select>
     <input type="text" id="fSr" placeholder="Search…" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px;flex:1;min-width:140px">
@@ -279,6 +279,7 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
   </div>
   <div id="adsSummary" class="ads-sum"></div>
   <div class="card tsc" id="adsTableWrap"></div>
+  <div id="leadFormsWrap" style="margin-top:16px"></div>
 </div>
 
 <div class="ddm-overlay" id="ddmOverlay" onclick="if(event.target===this)closeDeepDive()">
@@ -349,11 +350,12 @@ let CFG = { tok:'', acct:'' };
 /* ── LOCK ── */
 function initLock(){
   const stok=localStorage.getItem('ek_tok5'), sacct=localStorage.getItem('ek_acct5'), spin=localStorage.getItem('ek_pin5');
+  const spgid=localStorage.getItem('ek_pgid5')||'', spgtok=localStorage.getItem('ek_pgtok5')||'';
   if(TEAM.token){
     if(TEAM.pin && spin!==TEAM.pin){ showPin(); return; }
-    CFG={tok:TEAM.token,acct:TEAM.account}; hideLock(); return;
+    CFG={tok:TEAM.token,acct:TEAM.account,pageId:spgid,pageTok:spgtok}; hideLock(); return;
   }
-  if(stok){ CFG={tok:stok,acct:sacct||TEAM.account}; hideLock(); return; }
+  if(stok){ CFG={tok:stok,acct:sacct||TEAM.account,pageId:spgid,pageTok:spgtok}; hideLock(); return; }
   showTokenForm();
 }
 function showPin(){
@@ -366,27 +368,31 @@ function showPin(){
 function showTokenForm(){
   $('#ldesc').innerHTML='Connect your Meta Ads account to get started.';
   $('#lfields').innerHTML=`<div class="lf"><label>Meta Access Token</label><input type="password" id="tok-i" placeholder="Paste long-lived access token…" onkeydown="if(event.key==='Enter')unlock()"></div>
-  <div class="lf"><label>Ad Account ID</label><input type="text" id="acct-i" value="${TEAM.account}"></div>`;
+  <div class="lf"><label>Ad Account ID</label><input type="text" id="acct-i" value="${TEAM.account}"></div>
+  <div class="lf"><label>Page ID <span style="text-transform:none;font-weight:400">(optional — lead forms)</span></label><input type="text" id="pgid-i" placeholder="Facebook Page ID"></div>
+  <div class="lf"><label>Page Access Token <span style="text-transform:none;font-weight:400">(optional)</span></label><input type="password" id="pgtok-i" placeholder="Page token with leads_retrieval scope"></div>`;
   $('#lbtn').textContent='Connect →'; $('#lbtn').style.display='block';
-  $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code>';
+  $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code><br>Page fields are optional — only needed to show Lead Form submission counts.';
 }
 function unlock(){
   $('#lerr').textContent='';
   if(TEAM.token && TEAM.pin){
     const e=$('#pin-i')?.value?.trim();
     if(e!==TEAM.pin){$('#lerr').textContent='Incorrect PIN.';return;}
-    localStorage.setItem('ek_pin5',e); CFG={tok:TEAM.token,acct:TEAM.account}; hideLock(); return;
+    localStorage.setItem('ek_pin5',e); CFG={tok:TEAM.token,acct:TEAM.account,pageId:'',pageTok:''}; hideLock(); return;
   }
   const t=$('#tok-i')?.value?.trim(), a=$('#acct-i')?.value?.trim()||TEAM.account;
+  const pgid=$('#pgid-i')?.value?.trim()||'', pgtok=$('#pgtok-i')?.value?.trim()||'';
   if(!t){$('#lerr').textContent='Please paste your token.';return;}
   localStorage.setItem('ek_tok5',t); localStorage.setItem('ek_acct5',a);
-  CFG={tok:t,acct:a}; hideLock();
+  if(pgid)localStorage.setItem('ek_pgid5',pgid); if(pgtok)localStorage.setItem('ek_pgtok5',pgtok);
+  CFG={tok:t,acct:a,pageId:pgid,pageTok:pgtok}; hideLock();
 }
-function showSettings(){ localStorage.removeItem('ek_tok5');localStorage.removeItem('ek_pin5');location.reload(); }
+function showSettings(){ localStorage.removeItem('ek_tok5');localStorage.removeItem('ek_pin5');localStorage.removeItem('ek_pgid5');localStorage.removeItem('ek_pgtok5');location.reload(); }
 function hideLock(){ $('#lock').style.display='none'; init(); }
 
 /* ── STATE ── */
-const S={since:'2026-01-01',until:td(),tab:'overview',data:{},charts:{},tl:{},fatView:'card',selAds:new Set(),ddmMetric:'spend_ctr'};
+const S={since:'2026-01-01',until:td(),tab:'overview',data:{},charts:{},tl:{},fatView:'card',selAds:new Set(),selKnown:new Set(),ddmMetric:'spend_ctr'};
 function td(){return new Date().toISOString().split('T')[0];}
 function nAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split('T')[0];}
 function fmtM(s){return new Date(s+'T00:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'});}
@@ -418,6 +424,13 @@ function getCPR(row){
   return 0;
 }
 function getVid(f){if(!f)return 0;if(Array.isArray(f))return+(f.find(x=>x.action_type?.includes('video'))?.value||f[0]?.value||0);return+f||0;}
+function getLeads(row){ // leadgen/lead-type conversions, from the same ads_read actions array
+  const act=row.actions;
+  if(!Array.isArray(act))return 0;
+  return act.filter(x=>x.action_type==='lead'||x.action_type?.includes('lead_grouped')||x.action_type?.includes('offsite_conversion.fb_pixel_lead')).reduce((s,x)=>s+(+x.value||0),0);
+}
+function isActiveRunning(a){ return a.status==='ACTIVE' && (+a.spend||0)>0; }
+function fmtDate(d){ return d?d.slice(0,10):'—'; }
 
 /* ── AD TYPE ── */
 function adType(name){
@@ -480,7 +493,7 @@ async function loadTab(n){
 async function fetchCampaigns(){
   const [rows,sts]=await Promise.all([
     metaAll(`act_${CFG.acct}/insights`,{fields:`campaign_id,campaign_name,${IF},${VF}`,level:'campaign',time_range:tr()}),
-    metaAll(`act_${CFG.acct}/campaigns`,{fields:'id,name,effective_status,objective'})
+    metaAll(`act_${CFG.acct}/campaigns`,{fields:'id,name,effective_status,objective,start_time,stop_time'})
   ]);
   const sm={};sts.forEach(a=>sm[a.id]=a);
   S.data.campaigns=rows.filter(r=>parseFloat(r.spend||0)>0).map(r=>({
@@ -489,8 +502,12 @@ async function fetchCampaigns(){
     name:r.campaign_name,
     status:sm[r.campaign_id]?.effective_status||'UNKNOWN',
     objective:sm[r.campaign_id]?.objective||'',
+    startTime:sm[r.campaign_id]?.start_time||'',
+    stopTime:sm[r.campaign_id]?.stop_time||'',
     type:adType(r.campaign_name||'')
   }));
+  // Default-include every campaign we haven't seen before; preserves manual exclusions across refreshes/filters.
+  S.data.campaigns.forEach(a=>{ if(!S.selKnown.has(a.id)){ S.selKnown.add(a.id); S.selAds.add(a.id); } });
 }
 // Alias so older references work
 async function fetchAds(){ return fetchCampaigns(); }
@@ -565,7 +582,7 @@ function renderTypeChart(){
       y2:{type:'linear',position:'right',beginAtZero:true,ticks:{font:{size:10},color:TC,callback:v=>'$'+v},grid:{drawOnChartArea:false}}}}});
 }
 function renderActiveGrid(){
-  const ads=(S.data.campaigns||[]).filter(a=>a.status==='ACTIVE').sort((a,b)=>getCPR(a)-getCPR(b));
+  const ads=(S.data.campaigns||[]).filter(a=>isActiveRunning(a)).sort((a,b)=>getCPR(a)-getCPR(b));
   const avgCPR=S.data.acctTotals?.cv>0?S.data.acctTotals.sp/S.data.acctTotals.cv:0;
   $('#activeGrid').innerHTML=ads.slice(0,8).map(a=>{
     const cpr=getCPR(a),cv=getC(a);
@@ -593,57 +610,94 @@ async function loadAds(){
     const sel=$('#fTy');while(sel.options.length>1)sel.remove(1);
     types.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});
     renderAdsTable();
+    try{ renderLeadForms(await fetchLeadFormsSummary()); }
+    catch(e){ $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms &amp; response time</div><div class="emsg" style="display:block">⚠ ${e.message}</div>`; }
   }catch(e){showErr('ads',e.message);}
   finally{setLoad('ads',false);}
 }
+
+/* ── LEAD FORMS (optional, requires Page ID + Page Token with leads_retrieval) ── */
+async function fetchLeadFormsSummary(){
+  if(!CFG.pageId||!CFG.pageTok)return null;
+  const qs=new URLSearchParams({fields:'id,name,leads_count,status',access_token:CFG.pageTok,limit:100});
+  const r=await fetch(`${GRAPH}/${CFG.pageId}/leadgen_forms?${qs}`);
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message+' ('+d.error.code+')');
+  return d.data||[];
+}
+function renderLeadForms(forms){
+  if(!CFG.pageId||!CFG.pageTok){
+    $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms &amp; response time</div>
+      <div class="card" style="font-size:12px;color:#6A8A9A;line-height:1.7">
+        Add a Page ID + Page Access Token (with <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">leads_retrieval</code> permission) via the ⚙ settings to see Lead Form submission counts here.<br><br>
+        <strong style="color:#EFB060">Note:</strong> Meta's Graph API does not expose per-lead validation status or agent response-time as an ad-account metric — those are CRM/Business Suite concepts, not something Meta reports back to advertisers. This section can only show raw form submission counts from Meta.
+      </div>`;
+    return;
+  }
+  const rows=(forms||[]).map(f=>`<tr><td>${f.name}</td><td><span class="pill ${f.status==='ACTIVE'?'p-a':'p-p'}">${f.status}</span></td><td style="text-align:right;font-weight:700;color:#E8EDF2">${f.leads_count??'—'}</td></tr>`).join('')||`<tr><td colspan="3" style="text-align:center;padding:16px;color:#4A6A7A">No lead forms found for this Page.</td></tr>`;
+  $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms (Meta submission counts)</div>
+    <div class="card" style="margin-bottom:8px"><table class="dt"><thead><tr><th>Form</th><th>Status</th><th style="text-align:right">Total leads (all-time)</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p style="font-size:11px;color:#4A6A7A">Meta reports raw submission counts only — lead validation/qualification and agent response time are not available via the Graph API and must be tracked in your CRM.</p>`;
+}
 function renderAdsTable(fSt='all',fTy='all',srch=''){
   let ads=S.data.campaigns||[];
-  if(fSt==='ACTIVE')ads=ads.filter(a=>a.status==='ACTIVE');
-  if(fSt==='PAUSED')ads=ads.filter(a=>a.status!=='ACTIVE');
+  if(fSt==='ACTIVE')ads=ads.filter(a=>isActiveRunning(a));
+  if(fSt==='PAUSED')ads=ads.filter(a=>!isActiveRunning(a));
   if(fTy!=='all')ads=ads.filter(a=>a.type.l===fTy);
   if(srch){const q=srch.toLowerCase();ads=ads.filter(a=>a.name.toLowerCase().includes(q));}
   ads.sort((a,b)=>getCPR(a)-getCPR(b));
   S.data.filteredAds=ads;
   const avgCPR=S.data.acctTotals?.cv>0?S.data.acctTotals.sp/S.data.acctTotals.cv:0;
   $('#adCnt').textContent=`${ads.length} campaigns`;
-  const allChecked=ads.length>0&&ads.every(a=>S.selAds.has(a.id));
+  const allIncluded=ads.length>0&&ads.every(a=>S.selAds.has(a.id));
   const rows=ads.map(a=>{
-    const cpr=getCPR(a),cv=getC(a),freq=+a.frequency||0;
+    const cpr=getCPR(a),cv=getC(a),freq=+a.frequency||0,cl=+a.clicks||0,sp=+a.spend||0;
+    const cpc=cl>0?sp/cl:0,leads=getLeads(a),costPerLead=leads>0?sp/leads:0;
     const p25=getVid(a.video_p25_watched_actions),imp=+a.impressions||1,p100=getVid(a.video_p100_watched_actions);
     const hook=(p25/imp*100).toFixed(1),comp=p25>0?(p100/p25*100).toFixed(0)+'%':'—';
     const eff=avgCPR>0&&cpr>0?(avgCPR-cpr)/avgCPR*100:0;
     const effStr=cpr>0?(eff>0?`<span class="gb">+${eff.toFixed(0)}%</span>`:`<span class="rd">${eff.toFixed(0)}%</span>`):'—';
-    const checked=S.selAds.has(a.id)?'checked':'';
+    const included=S.selAds.has(a.id)?'checked':'';
+    const running=isActiveRunning(a);
     return `<tr>
-      <td class="cb-col"><input type="checkbox" ${checked} onchange="toggleAdSel('${a.id}')"></td>
+      <td class="cb-col" title="Uncheck to exclude from the summary averages"><input type="checkbox" ${included} onchange="toggleAdSel('${a.id}')"></td>
       <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:#C8D5DF" title="${a.name}"><span class="camp-link" onclick="openDeepDive('${a.id}')">${a.name.length>40?a.name.slice(0,40)+'…':a.name}</span></td>
-      <td><span class="pill ${a.status==='ACTIVE'?'p-a':'p-p'}">${a.status}</span></td>
+      <td><span class="pill ${running?'p-a':'p-p'}" title="Active & spending = Meta status ACTIVE and spend>0 in range">${running?'ACTIVE':a.status}</span></td>
       <td><span class="pill ${a.type.c}">${a.type.e} ${a.type.l}</span></td>
-      <td style="color:#C8D5DF">$${parseFloat(a.spend).toFixed(0)}</td>
+      <td style="font-size:10.5px;color:#6A8A9A">${a.objective||'—'}</td>
+      <td style="font-size:10.5px;color:#6A8A9A;white-space:nowrap">${fmtDate(a.startTime)}</td>
+      <td style="font-size:10.5px;color:#6A8A9A;white-space:nowrap">${a.stopTime?fmtDate(a.stopTime):'Ongoing'}</td>
+      <td style="color:#C8D5DF">$${sp.toFixed(0)}</td>
       <td>${fmt(+a.impressions,'big')}</td>
+      <td>${fmt(cl,'big')}</td>
       <td>${(+a.ctr||0).toFixed(2)}%</td>
       <td>$${(+a.cpm||0).toFixed(2)}</td>
+      <td>${cl>0?'$'+cpc.toFixed(2):'—'}</td>
       <td style="color:${freq>2.5?'#F08080':'#C8D5DF'}">${freq.toFixed(2)}</td>
       <td>${fmt(+a.reach,'big')}</td>
       <td>${cv}</td>
       <td class="${cprCls(cpr)}">$${cpr.toFixed(3)}</td>
       <td>${effStr}</td>
+      <td>${leads||'—'}</td>
+      <td>${leads>0?'$'+costPerLead.toFixed(2):'—'}</td>
       <td>${hook}%</td>
       <td>${comp}</td>
     </tr>`;
-  }).join('')||`<tr><td colspan="15" style="text-align:center;padding:20px;color:#4A6A7A">No campaigns match filters</td></tr>`;
+  }).join('')||`<tr><td colspan="21" style="text-align:center;padding:20px;color:#4A6A7A">No campaigns match filters</td></tr>`;
   $('#adsTableWrap').innerHTML=`<table class="dt"><thead><tr>
-    <th class="cb-col"><input type="checkbox" ${allChecked?'checked':''} onchange="toggleSelectAllAds(this.checked)"></th>
-    <th style="min-width:220px">Campaign name (click to deep dive)</th><th>Status</th><th>Content type</th><th>Spend</th>
-    <th>Impressions</th><th>CTR</th><th>CPM</th><th title="Flag if >2.5">Freq</th>
+    <th class="cb-col" title="Uncheck to exclude from summary averages"><input type="checkbox" ${allIncluded?'checked':''} onchange="toggleSelectAllAds(this.checked)"></th>
+    <th style="min-width:220px">Campaign name (click to deep dive)</th><th>Status</th><th>Content type</th><th>Objective</th>
+    <th>Started</th><th>Ended</th><th>Spend</th>
+    <th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPM</th><th title="Cost per click = spend ÷ clicks">CPC</th><th title="Flag if >2.5">Freq</th>
     <th>Reach</th><th>Convos</th><th title="Cost per conversation">CPR ↑</th>
     <th title="vs account average CPR">vs avg</th>
+    <th title="Lead-type conversions reported in Meta ads insights (not CRM-validated)">Leads</th><th title="Spend ÷ leads">Cost/Lead</th>
     <th title="% watching past 25%">Hook%</th><th title="% finishing video">Comp%</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
   renderAdsSummary();
 }
 
-/* ── SELECTION + SUMMARY ── */
+/* ── SELECTION (default: all included; uncheck to exclude) + SUMMARY ── */
 function toggleAdSel(id){
   if(S.selAds.has(id))S.selAds.delete(id); else S.selAds.add(id);
   renderAdsSummary();
@@ -655,20 +709,22 @@ function toggleSelectAllAds(checked){
 }
 function renderAdsSummary(){
   const all=S.data.filteredAds||[];
-  const chosen=all.filter(a=>S.selAds.has(a.id));
-  const set=chosen.length?chosen:all;
-  const isAll=chosen.length===0;
-  const tot=set.reduce((acc,a)=>({sp:acc.sp+(+a.spend||0),im:acc.im+(+a.impressions||0),cl:acc.cl+(+a.clicks||0),cv:acc.cv+getC(a),rc:acc.rc+(+a.reach||0),frSum:acc.frSum+(+a.frequency||0)}),{sp:0,im:0,cl:0,cv:0,rc:0,frSum:0});
-  const ctr=tot.im>0?tot.cl/tot.im*100:0, cpm=tot.im>0?tot.sp/tot.im*1000:0, cpr=tot.cv>0?tot.sp/tot.cv:0, avgFreq=set.length?tot.frSum/set.length:0;
+  const set=all.filter(a=>S.selAds.has(a.id));
+  const excluded=all.length-set.length;
+  const tot=set.reduce((acc,a)=>({sp:acc.sp+(+a.spend||0),im:acc.im+(+a.impressions||0),cl:acc.cl+(+a.clicks||0),cv:acc.cv+getC(a),rc:acc.rc+(+a.reach||0),frSum:acc.frSum+(+a.frequency||0),leads:acc.leads+getLeads(a)}),{sp:0,im:0,cl:0,cv:0,rc:0,frSum:0,leads:0});
+  const ctr=tot.im>0?tot.cl/tot.im*100:0, cpm=tot.im>0?tot.sp/tot.im*1000:0, cpc=tot.cl>0?tot.sp/tot.cl:0, cpr=tot.cv>0?tot.sp/tot.cv:0, avgFreq=set.length?tot.frSum/set.length:0, costPerLead=tot.leads>0?tot.sp/tot.leads:0;
   $('#adsSummary').innerHTML=`
-    <div class="ki ak"><div class="ads-sum-lbl">${isAll?'All filtered':chosen.length+' selected'}</div><div class="kv" style="font-size:16px">${set.length} campaign${set.length===1?'':'s'}</div></div>
+    <div class="ki ak"><div class="ads-sum-lbl">Included${excluded?` (${excluded} excluded)`:''}</div><div class="kv" style="font-size:16px">${set.length} campaign${set.length===1?'':'s'}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Total spend</div><div class="kv" style="font-size:16px">${fmt(tot.sp,'$0')}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Impressions</div><div class="kv" style="font-size:16px">${fmt(tot.im,'big')}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Reach</div><div class="kv" style="font-size:16px">${fmt(tot.rc,'big')}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Conversations</div><div class="kv" style="font-size:16px">${tot.cv}</div></div>
+    <div class="ki"><div class="ads-sum-lbl">Leads</div><div class="kv" style="font-size:16px">${tot.leads||'—'}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Blended CTR</div><div class="kv" style="font-size:16px">${ctr.toFixed(2)}%</div></div>
     <div class="ki"><div class="ads-sum-lbl">Blended CPM</div><div class="kv" style="font-size:16px">$${cpm.toFixed(2)}</div></div>
+    <div class="ki"><div class="ads-sum-lbl">Blended CPC</div><div class="kv" style="font-size:16px">${tot.cl>0?'$'+cpc.toFixed(2):'—'}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Blended CPR</div><div class="kv" style="font-size:16px">${tot.cv>0?'$'+cpr.toFixed(2):'—'}</div></div>
+    <div class="ki"><div class="ads-sum-lbl">Cost/Lead</div><div class="kv" style="font-size:16px">${tot.leads>0?'$'+costPerLead.toFixed(2):'—'}</div></div>
     <div class="ki"><div class="ads-sum-lbl">Avg frequency</div><div class="kv" style="font-size:16px;color:${avgFreq>2.5?'#F08080':'#E8EDF2'}">${avgFreq.toFixed(2)}</div></div>
   `;
 }
