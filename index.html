@@ -279,7 +279,7 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
   </div>
   <div id="adsSummary" class="ads-sum"></div>
   <div class="card tsc" id="adsTableWrap"></div>
-  <div id="leadFormsWrap" style="margin-top:16px"></div>
+  <div id="pageInfoWrap" style="margin-top:16px"></div>
 </div>
 
 <div class="ddm-overlay" id="ddmOverlay" onclick="if(event.target===this)closeDeepDive()">
@@ -373,10 +373,10 @@ function showTokenForm(){
   $('#ldesc').innerHTML='Connect your Meta Ads account to get started.';
   $('#lfields').innerHTML=`<div class="lf"><label>Meta Access Token</label><input type="password" id="tok-i" placeholder="Paste long-lived access token…" onkeydown="if(event.key==='Enter')unlock()"></div>
   <div class="lf"><label>Ad Account ID</label><input type="text" id="acct-i" value="${TEAM.account}"></div>
-  <div class="lf"><label>Page ID <span style="text-transform:none;font-weight:400">(optional — lead forms)</span></label><input type="text" id="pgid-i" value="${TEAM.page}" placeholder="Facebook Page ID or username"></div>
-  <div class="lf"><label>Page Access Token <span style="text-transform:none;font-weight:400">(optional)</span></label><input type="password" id="pgtok-i" placeholder="Page token with leads_retrieval scope"></div>`;
+  <div class="lf"><label>Page ID <span style="text-transform:none;font-weight:400">(optional — page overview)</span></label><input type="text" id="pgid-i" value="${TEAM.page}" placeholder="Facebook Page ID or username"></div>
+  <div class="lf"><label>Page Access Token <span style="text-transform:none;font-weight:400">(optional)</span></label><input type="password" id="pgtok-i" placeholder="Page token with pages_read_engagement scope"></div>`;
   $('#lbtn').textContent='Connect →'; $('#lbtn').style.display='block';
-  $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code><br>Page fields are optional — only needed to show Lead Form submission counts.';
+  $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code><br>Page fields are optional — only needed to show follower count and organic post engagement.';
 }
 function unlock(){
   $('#lerr').textContent='';
@@ -625,13 +625,13 @@ async function loadAds(){
     const sel=$('#fTy');while(sel.options.length>1)sel.remove(1);
     types.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});
     renderAdsTable();
-    try{ await loadLeadForms(); }
-    catch(e){ $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms &amp; response time</div><div class="emsg" style="display:block">⚠ ${e.message}</div>`; }
+    try{ await loadPageInfo(); }
+    catch(e){ $('#pageInfoWrap').innerHTML=`<div class="stl">Page overview</div><div class="emsg" style="display:block">⚠ ${e.message}</div>`; }
   }catch(e){showErr('ads',e.message);}
   finally{setLoad('ads',false);}
 }
 
-/* ── LEAD FORMS (optional, requires Page ID + Page Token with leads_retrieval) ── */
+/* ── PAGE OVERVIEW (optional, requires Page ID + Page Token) ── */
 async function pageGet(path,p={}){
   const qs=new URLSearchParams({...p,access_token:CFG.pageTok});
   const r=await fetch(`${GRAPH}/${path}?${qs}`);
@@ -639,60 +639,66 @@ async function pageGet(path,p={}){
   if(d.error)throw new Error(d.error.message+' ('+d.error.code+')');
   return d;
 }
-async function loadLeadForms(){
-  if(!CFG.pageId||!CFG.pageTok){ renderLeadForms(null,[]); return; }
-  // NOTE: `leads_count` is not a valid field on the leadgen_forms edge in this API
-  // version (Meta returns error #100 for it) — total counts have to come from the
-  // /leads edge's `summary.total_count` instead, per form.
-  const forms=(await pageGet(`${CFG.pageId}/leadgen_forms`,{fields:'id,name,status',limit:100})).data||[];
-  const sinceMs=new Date(S.since).getTime(), untilMs=new Date(S.until).getTime()+86400000;
-  const allLeads=[];
-  for(const f of forms){
-    try{
-      const d=await pageGet(`${f.id}/leads`,{fields:'created_time',limit:200,summary:'true'});
-      f.totalCount=d.summary?.total_count??null;
-      f.fetchedCount=(d.data||[]).length;
-      (d.data||[]).forEach(l=>{
-        const t=new Date(l.created_time).getTime();
-        if(t>=sinceMs&&t<=untilMs)allLeads.push({date:l.created_time.slice(0,10),form:f.name});
-      });
-    }catch(e){ f.fetchError=e.message; }
-  }
-  renderLeadForms(forms,allLeads);
+async function loadPageInfo(){
+  if(!CFG.pageId||!CFG.pageTok){ renderPageInfo(null,null,null); return; }
+  let profile=null,profileErr=null,posts=null,postsErr=null;
+  try{
+    // followers_count is the current standard field (fan_count is legacy/deprecated
+    // for Pages created after 2018) — needs pages_read_engagement.
+    profile=await pageGet(`${CFG.pageId}`,{fields:'name,followers_count,fan_count,category,verification_status,link,about'});
+  }catch(e){ profileErr=e.message; }
+  try{
+    posts=(await pageGet(`${CFG.pageId}/posts`,{fields:'message,created_time,permalink_url,shares,likes.summary(true),comments.summary(true)',limit:10})).data||[];
+  }catch(e){ postsErr=e.message; }
+  renderPageInfo(profile,profileErr,{posts,postsErr});
 }
-function renderLeadForms(forms,leads){
+function renderPageInfo(profile,profileErr,postsInfo){
   if(!CFG.pageId||!CFG.pageTok){
-    $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms &amp; response time</div>
+    $('#pageInfoWrap').innerHTML=`<div class="stl">Page overview</div>
       <div class="card" style="font-size:12px;color:#6A8A9A;line-height:1.7">
-        Add a Page ID + Page Access Token (with <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">leads_retrieval</code> permission) via the ⚙ settings to see Lead Form submission counts and a leads-over-time chart here.<br><br>
-        <strong style="color:#EFB060">Note:</strong> Meta's Graph API does not expose per-lead validation status or agent response-time as an ad-account metric — those are CRM/Business Suite concepts, not something Meta reports back to advertisers. This section can only show what Meta actually returns: raw form submission counts and timestamps.
+        Add a Page ID + Page Access Token (with <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">pages_read_engagement</code> permission) via the ⚙ settings to see follower count and organic post engagement here — useful for checking whether ad spend is also growing the organic audience, and how paid creative compares to organic content.
       </div>`;
     return;
   }
-  const rows=(forms||[]).map(f=>{
-    const countLabel=f.totalCount!=null?f.totalCount:f.fetchError?`⚠ ${f.fetchError}`:f.fetchedCount!=null?`${f.fetchedCount}+ (recent, no total available)`:'—';
-    return `<tr><td>${f.name}</td><td><span class="pill ${f.status==='ACTIVE'?'p-a':'p-p'}">${f.status}</span></td><td style="text-align:right;font-weight:700;color:#E8EDF2">${countLabel}</td></tr>`;
-  }).join('')||`<tr><td colspan="3" style="text-align:center;padding:16px;color:#4A6A7A">No lead forms found for this Page.</td></tr>`;
-  $('#leadFormsWrap').innerHTML=`<div class="stl">Lead forms (Meta submission counts)</div>
-    <div class="card" style="margin-bottom:12px"><table class="dt"><thead><tr><th>Form</th><th>Status</th><th style="text-align:right">Total leads</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="stl">Leads over time — selected date range</div>
-    <div class="card" style="margin-bottom:12px"><div style="position:relative;height:180px"><canvas id="cLeadsTime"></canvas></div></div>
-    <div class="stl">Other Page-level graphs worth adding</div>
-    <div class="card" style="font-size:12px;color:#6A8A9A;line-height:1.8">
-      With the same Page token (broader permissions needed for each), these would be worth pulling in next:<br>
-      <strong style="color:#C8D5DF">• Page follower growth</strong> — <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">page_fans</code> metric, needs <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">pages_read_engagement</code> — shows whether ad spend is also growing organic audience.<br>
-      <strong style="color:#C8D5DF">• Post engagement</strong> — <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">page_post_engagements</code> — correlate organic content performance against paid.<br>
-      <strong style="color:#C8D5DF">• Message volume</strong> — count of <code style="background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1">/{page-id}/conversations</code> — a proxy for inbound volume (not response time — see note above).<br><br>
-      <strong style="color:#EFB060">Not building:</strong> "average response time" and per-lead validation/qualification status — Meta does not expose a stable, documented Graph API metric for either. Any dashboard claiming to show these from Meta alone would be showing a made-up number.
-    </div>`;
-  const byDate={};
-  (leads||[]).forEach(l=>{byDate[l.date]=(byDate[l.date]||0)+1;});
-  const dates=Object.keys(byDate).sort();
-  dc('cLeadsTime');
-  const ctx=document.getElementById('cLeadsTime')?.getContext('2d');
-  if(ctx&&dates.length)S.charts['cLeadsTime']=new Chart(ctx,{type:'bar',data:{labels:dates,datasets:[
-    {label:'Leads submitted',data:dates.map(d=>byDate[d]),backgroundColor:'rgba(192,144,240,.6)',borderRadius:3},
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{...bs.x,ticks:{...bs.x.ticks,maxRotation:0,autoSkip:true,maxTicksLimit:14}},y:{...bs.y,beginAtZero:true}}}});
+  const followers=profile?.followers_count??profile?.fan_count;
+  const profileCard=profileErr
+    ? `<div class="card" style="font-size:12px;color:#6A8A9A"><span class="emsg" style="display:block">⚠ ${profileErr}</span></div>`
+    : `<div class="ads-sum">
+        <div class="ki ak"><div class="ads-sum-lbl">Followers</div><div class="kv" style="font-size:16px">${followers!=null?fmt(followers,'big'):'—'}</div></div>
+        <div class="ki"><div class="ads-sum-lbl">Category</div><div class="kv" style="font-size:13px">${profile?.category||'—'}</div></div>
+        <div class="ki"><div class="ads-sum-lbl">Verification</div><div class="kv" style="font-size:13px">${profile?.verification_status||'not verified'}</div></div>
+      </div>`;
+
+  const posts=postsInfo?.posts, postsErr=postsInfo?.postsErr;
+  let postsHtml;
+  if(postsErr){
+    postsHtml=`<div class="card"><span class="emsg" style="display:block">⚠ ${postsErr}</span></div>`;
+  }else if(!posts||!posts.length){
+    postsHtml=`<div class="card" style="text-align:center;color:#4A6A7A;padding:16px">No recent posts found for this Page.</div>`;
+  }else{
+    const rows=posts.map(p=>{
+      const likes=p.likes?.summary?.total_count??0, comments=p.comments?.summary?.total_count??0, shares=p.shares?.count??0;
+      const msg=(p.message||'(no text — photo/video/link post)').slice(0,60);
+      const date=p.created_time?p.created_time.slice(0,10):'—';
+      return `<tr>
+        <td>${date}</td>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${(p.message||'').replace(/"/g,'&quot;')}">${p.permalink_url?`<a href="${p.permalink_url}" target="_blank" rel="noopener" style="color:#C8D5DF;text-decoration:none;border-bottom:1px dashed rgba(94,203,161,.4)">${msg}</a>`:msg}</td>
+        <td style="text-align:right">${likes}</td>
+        <td style="text-align:right">${comments}</td>
+        <td style="text-align:right">${shares}</td>
+        <td style="text-align:right;font-weight:700;color:#E8EDF2">${likes+comments+shares}</td>
+      </tr>`;
+    }).join('');
+    postsHtml=`<div class="card tsc"><table class="dt"><thead><tr>
+      <th>Date</th><th>Post</th><th style="text-align:right">Likes</th><th style="text-align:right">Comments</th><th style="text-align:right">Shares</th><th style="text-align:right">Total engagement</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  $('#pageInfoWrap').innerHTML=`<div class="stl">Page overview</div>
+    ${profileCard}
+    <div class="stl" style="margin-top:16px">Recent posts — organic engagement (last 10)</div>
+    <p style="font-size:11px;color:#4A6A7A;margin-bottom:8px">Use this to compare what resonates organically vs. what you're paying to boost — a hook that does well unpaid is often worth turning into an ad.</p>
+    ${postsHtml}`;
 }
 function renderAdsTable(fSt='all',fTy='all',srch=''){
   let ads=S.data.campaigns||[];
