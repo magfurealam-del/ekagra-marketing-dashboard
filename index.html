@@ -250,6 +250,7 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tb" data-tab="intel">🧠 Intelligence</button>
   <button class="tb" data-tab="audience">🎯 Audience</button>
   <button class="tb" data-tab="daily">⚡ Fatigue</button>
+  <button class="tb" data-tab="page">📘 Page</button>
 </nav>
 
 <div id="tab-overview" class="pane active">
@@ -279,7 +280,6 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
   </div>
   <div id="adsSummary" class="ads-sum"></div>
   <div class="card tsc" id="adsTableWrap"></div>
-  <div id="pageInfoWrap" style="margin-top:16px"></div>
 </div>
 
 <div class="ddm-overlay" id="ddmOverlay" onclick="if(event.target===this)closeDeepDive()">
@@ -326,6 +326,12 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
     </div>
   </div>
   <div id="fatBody"></div>
+</div>
+
+<div id="tab-page" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div id="pageInfoWrap"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -494,6 +500,7 @@ async function loadTab(n){
     case 'video':    await loadVideo();    break;
     case 'intel':    await loadIntel();    break;
     case 'audience': await loadAudience(); break;
+    case 'page':     await loadPageInfo(); break;
   }
   S.tl[n]=true;
 }
@@ -625,8 +632,6 @@ async function loadAds(){
     const sel=$('#fTy');while(sel.options.length>1)sel.remove(1);
     types.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});
     renderAdsTable();
-    try{ await loadPageInfo(); }
-    catch(e){ $('#pageInfoWrap').innerHTML=`<div class="stl">Page overview</div><div class="emsg" style="display:block">⚠ ${e.message}</div>`; }
   }catch(e){showErr('ads',e.message);}
   finally{setLoad('ads',false);}
 }
@@ -640,17 +645,21 @@ async function pageGet(path,p={}){
   return d;
 }
 async function loadPageInfo(){
-  if(!CFG.pageId||!CFG.pageTok){ renderPageInfo(null,null,null); return; }
-  let profile=null,profileErr=null,posts=null,postsErr=null;
+  setLoad('page',true);clrErr('page');
   try{
-    // followers_count is the current standard field (fan_count is legacy/deprecated
-    // for Pages created after 2018) — needs pages_read_engagement.
-    profile=await pageGet(`${CFG.pageId}`,{fields:'name,followers_count,fan_count,category,verification_status,link,about'});
-  }catch(e){ profileErr=e.message; }
-  try{
-    posts=(await pageGet(`${CFG.pageId}/posts`,{fields:'message,created_time,permalink_url,shares,likes.summary(true),comments.summary(true)',limit:10})).data||[];
-  }catch(e){ postsErr=e.message; }
-  renderPageInfo(profile,profileErr,{posts,postsErr});
+    if(!CFG.pageId||!CFG.pageTok){ renderPageInfo(null,null,null); return; }
+    let profile=null,profileErr=null,posts=null,postsErr=null;
+    try{
+      // followers_count is the current standard field (fan_count is legacy/deprecated
+      // for Pages created after 2018) — needs pages_read_engagement.
+      profile=await pageGet(`${CFG.pageId}`,{fields:'name,followers_count,fan_count,category,verification_status,link,about'});
+    }catch(e){ profileErr=e.message; }
+    try{
+      posts=(await pageGet(`${CFG.pageId}/posts`,{fields:'message,created_time,permalink_url,shares,likes.summary(true),comments.summary(true)',limit:10})).data||[];
+    }catch(e){ postsErr=e.message; }
+    renderPageInfo(profile,profileErr,{posts,postsErr});
+  }catch(e){showErr('page',e.message);}
+  finally{setLoad('page',false);}
 }
 function renderPageInfo(profile,profileErr,postsInfo){
   if(!CFG.pageId||!CFG.pageTok){
@@ -832,7 +841,7 @@ function renderDeepDiveBody(){
   </div>`;
 
   const rowsHtml=rows.map(r=>{
-    const sp=+r.spend||0,im=+r.impressions||0,cl=+r.clicks||0,cv=getC(r),ld=getLeads(r),ctrD=+r.ctr||0,cpmD=+r.cpm||0,cprD=getCPR(r),freqD=+r.frequency||0,rcD=+r.reach||0;
+    const sp=+r.spend||0,im=+r.impressions||0,cl=+r.clicks||0,cv=getC(r),ld=getLeads(r),ctrD=+r.ctr||0,cpmD=+r.cpm||0,cprD=getCPR(r),freqD=+r.frequency||0,rcD=+r.reach||0,costLeadD=ld>0?sp/ld:null;
     return `<tr>
       <td>${r.date_start}</td>
       <td>$${sp.toFixed(2)}</td>
@@ -845,12 +854,13 @@ function renderDeepDiveBody(){
       <td>${cv}</td>
       <td>${ld||'—'}</td>
       <td class="${cprCls(cprD)}">${cv>0?'$'+cprD.toFixed(3):'—'}</td>
+      <td>${costLeadD!=null?'$'+costLeadD.toFixed(2):'—'}</td>
     </tr>`;
   }).reverse().join('');
 
   $('#ddmBody').innerHTML=`${metricsHtml}<div class="ddm-chart-wrap" style="height:320px"><canvas id="ddmChart"></canvas></div>
     <div class="tsc"><table class="dt"><thead><tr>
-      <th>Date</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPM</th><th>Reach</th><th>Freq</th><th>Convos</th><th>Leads</th><th>CPR</th>
+      <th>Date</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPM</th><th>Reach</th><th>Freq</th><th>Convos</th><th>Leads</th><th>CPR</th><th>Cost/Lead</th>
     </tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
 
   renderDeepDiveChart(rows);
