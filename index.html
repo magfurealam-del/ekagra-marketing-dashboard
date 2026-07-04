@@ -340,6 +340,10 @@ table.dt tr:hover td{background:rgba(255,255,255,.02)}
 const TEAM = {
   token:   '',              // ← Paste Meta access token here
   account: '700609876173906',
+  page:    'EkagraHealthBD', // facebook.com/EkagraHealthBD — Graph API accepts the
+                              // Page username in place of its numeric ID for these
+                              // endpoints, as long as the supplied Page token has
+                              // access to it.
   pin:     '',              // ← Optional team PIN (leave blank to disable)
 };
 /* ═════════════════════════════════════════════════════════════ */
@@ -350,7 +354,7 @@ let CFG = { tok:'', acct:'' };
 /* ── LOCK ── */
 function initLock(){
   const stok=localStorage.getItem('ek_tok5'), sacct=localStorage.getItem('ek_acct5'), spin=localStorage.getItem('ek_pin5');
-  const spgid=localStorage.getItem('ek_pgid5')||'', spgtok=localStorage.getItem('ek_pgtok5')||'';
+  const spgid=localStorage.getItem('ek_pgid5')||TEAM.page||'', spgtok=localStorage.getItem('ek_pgtok5')||'';
   if(TEAM.token){
     if(TEAM.pin && spin!==TEAM.pin){ showPin(); return; }
     CFG={tok:TEAM.token,acct:TEAM.account,pageId:spgid,pageTok:spgtok}; hideLock(); return;
@@ -369,7 +373,7 @@ function showTokenForm(){
   $('#ldesc').innerHTML='Connect your Meta Ads account to get started.';
   $('#lfields').innerHTML=`<div class="lf"><label>Meta Access Token</label><input type="password" id="tok-i" placeholder="Paste long-lived access token…" onkeydown="if(event.key==='Enter')unlock()"></div>
   <div class="lf"><label>Ad Account ID</label><input type="text" id="acct-i" value="${TEAM.account}"></div>
-  <div class="lf"><label>Page ID <span style="text-transform:none;font-weight:400">(optional — lead forms)</span></label><input type="text" id="pgid-i" placeholder="Facebook Page ID"></div>
+  <div class="lf"><label>Page ID <span style="text-transform:none;font-weight:400">(optional — lead forms)</span></label><input type="text" id="pgid-i" value="${TEAM.page}" placeholder="Facebook Page ID or username"></div>
   <div class="lf"><label>Page Access Token <span style="text-transform:none;font-weight:400">(optional)</span></label><input type="password" id="pgtok-i" placeholder="Page token with leads_retrieval scope"></div>`;
   $('#lbtn').textContent='Connect →'; $('#lbtn').style.display='block';
   $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code><br>Page fields are optional — only needed to show Lead Form submission counts.';
