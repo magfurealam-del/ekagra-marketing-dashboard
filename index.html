@@ -396,7 +396,7 @@ function showSettings(){ localStorage.removeItem('ek_tok5');localStorage.removeI
 function hideLock(){ $('#lock').style.display='none'; init(); }
 
 /* ── STATE ── */
-const S={since:'2026-01-01',until:td(),tab:'overview',data:{},charts:{},tl:{},fatView:'card',selAds:new Set(),selKnown:new Set(),ddmMetric:'spend_ctr'};
+const S={since:'2026-01-01',until:td(),tab:'overview',data:{},charts:{},tl:{},fatView:'card',selAds:new Set(),selKnown:new Set()};
 function td(){return new Date().toISOString().split('T')[0];}
 function nAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split('T')[0];}
 function fmtM(s){return new Date(s+'T00:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'});}
@@ -805,7 +805,6 @@ async function openDeepDive(id){
   }
 }
 function closeDeepDive(){$('#ddmOverlay').classList.remove('open');dc('ddmChart');}
-function setDDMMetric(m){S.ddmMetric=m;renderDeepDiveBody();}
 
 function renderDeepDiveBody(){
   const{rows}=S.data.deepDive||{rows:[]};
@@ -826,9 +825,6 @@ function renderDeepDiveBody(){
     <div class="ddm-m"><div class="ddm-m-v" style="color:${avgFreq>2.5?'#F08080':'#E8EDF2'}">${avgFreq.toFixed(2)}</div><div class="ddm-m-l">Avg frequency</div></div>
   </div>`;
 
-  const toggles=[['spend_ctr','Spend vs CTR'],['cpr_cpm','CPR vs CPM'],['cpr_costlead','CPR vs Cost/Lead'],['convos_freq','Conversations vs Frequency'],['convos_leads','Conversations vs Leads']];
-  const toggleHtml=`<div class="ddm-metric-toggle">${toggles.map(([k,l])=>`<button class="mtb ${S.ddmMetric===k?'active':''}" onclick="setDDMMetric('${k}')">${l}</button>`).join('')}</div>`;
-
   const rowsHtml=rows.map(r=>{
     const sp=+r.spend||0,im=+r.impressions||0,cl=+r.clicks||0,cv=getC(r),ld=getLeads(r),ctrD=+r.ctr||0,cpmD=+r.cpm||0,cprD=getCPR(r),freqD=+r.frequency||0,rcD=+r.reach||0;
     return `<tr>
@@ -846,7 +842,7 @@ function renderDeepDiveBody(){
     </tr>`;
   }).reverse().join('');
 
-  $('#ddmBody').innerHTML=`${metricsHtml}${toggleHtml}<div class="ddm-chart-wrap"><canvas id="ddmChart"></canvas></div>
+  $('#ddmBody').innerHTML=`${metricsHtml}<div class="ddm-chart-wrap" style="height:320px"><canvas id="ddmChart"></canvas></div>
     <div class="tsc"><table class="dt"><thead><tr>
       <th>Date</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPM</th><th>Reach</th><th>Freq</th><th>Convos</th><th>Leads</th><th>CPR</th>
     </tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
@@ -858,38 +854,34 @@ function renderDeepDiveChart(rows){
   dc('ddmChart');
   const ctx=document.getElementById('ddmChart')?.getContext('2d');if(!ctx)return;
   const labels=rows.map(r=>r.date_start.slice(5));
-  let datasets;
-  if(S.ddmMetric==='spend_ctr'){
-    datasets=[
-      {type:'bar',label:'Spend ($)',data:rows.map(r=>+r.spend||0),backgroundColor:'rgba(94,203,161,.6)',borderRadius:3,yAxisID:'y',order:2},
-      {type:'line',label:'CTR (%)',data:rows.map(r=>+r.ctr||0),borderColor:'#EFB060',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y2',order:1},
-    ];
-  }else if(S.ddmMetric==='cpr_cpm'){
-    datasets=[
-      {type:'line',label:'CPR ($)',data:rows.map(r=>getCPR(r)),borderColor:'#F08080',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y'},
-      {type:'line',label:'CPM ($)',data:rows.map(r=>+r.cpm||0),borderColor:'#78A8E0',borderWidth:2,pointRadius:2,tension:.3,borderDash:[4,3],yAxisID:'y2'},
-    ];
-  }else if(S.ddmMetric==='cpr_costlead'){
-    // Both are cost-per-outcome in $ — plotted on the same axis so they're
-    // directly comparable at a glance, rather than split across two scales.
-    datasets=[
-      {type:'line',label:'CPR ($ per conversation)',data:rows.map(r=>getCPR(r)),borderColor:'#F08080',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y'},
-      {type:'line',label:'Cost/Lead ($)',data:rows.map(r=>{const ld=getLeads(r);return ld>0?(+r.spend||0)/ld:null;}),borderColor:'#C090F0',borderWidth:2,pointRadius:2,tension:.3,spanGaps:true,yAxisID:'y'},
-    ];
-  }else if(S.ddmMetric==='convos_freq'){
-    datasets=[
-      {type:'bar',label:'Conversations',data:rows.map(r=>getC(r)),backgroundColor:'rgba(120,168,224,.6)',borderRadius:3,yAxisID:'y',order:2},
-      {type:'line',label:'Frequency',data:rows.map(r=>+r.frequency||0),borderColor:'#C090F0',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y2',order:1},
-    ];
-  }else{
-    datasets=[
-      {type:'bar',label:'Conversations',data:rows.map(r=>getC(r)),backgroundColor:'rgba(120,168,224,.6)',borderRadius:3,yAxisID:'y',order:2},
-      {type:'bar',label:'Leads',data:rows.map(r=>getLeads(r)),backgroundColor:'rgba(192,144,240,.6)',borderRadius:3,yAxisID:'y',order:1},
-    ];
-  }
+  // Single combined chart — everything that used to live behind separate toggle
+  // tabs, all at once. Two visible axes (dollars left, percent right); counts
+  // (conversations/leads) and frequency ride hidden axes so they don't squash
+  // the dollar figures, but stay in the legend/tooltip for direct comparison.
+  const datasets=[
+    {type:'bar',label:'Spend ($)',data:rows.map(r=>+r.spend||0),backgroundColor:'rgba(94,203,161,.55)',borderRadius:3,yAxisID:'y',order:5},
+    {type:'line',label:'CPM ($)',data:rows.map(r=>+r.cpm||0),borderColor:'#78A8E0',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y',order:4},
+    {type:'line',label:'CPR ($/conversation)',data:rows.map(r=>getCPR(r)),borderColor:'#F08080',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y',order:3},
+    {type:'line',label:'Cost/Lead ($)',data:rows.map(r=>{const ld=getLeads(r);return ld>0?(+r.spend||0)/ld:null;}),borderColor:'#C090F0',borderWidth:2,pointRadius:2,tension:.3,spanGaps:true,yAxisID:'y',order:2},
+    {type:'line',label:'CTR (%)',data:rows.map(r=>+r.ctr||0),borderColor:'#EFB060',borderWidth:2,pointRadius:2,tension:.3,yAxisID:'y2',order:1},
+    {type:'line',label:'Conversations',data:rows.map(r=>getC(r)),borderColor:'#5ECBA1',borderWidth:1.5,borderDash:[2,2],pointRadius:1,tension:.3,yAxisID:'y3',order:6,hidden:true},
+    {type:'line',label:'Leads',data:rows.map(r=>getLeads(r)),borderColor:'#9C6ADE',borderWidth:1.5,borderDash:[2,2],pointRadius:1,tension:.3,yAxisID:'y3',order:7,hidden:true},
+    {type:'line',label:'Frequency',data:rows.map(r=>+r.frequency||0),borderColor:'#8A9AAA',borderWidth:1.5,borderDash:[2,2],pointRadius:1,tension:.3,yAxisID:'y4',order:8,hidden:true},
+  ];
   S.charts['ddmChart']=new Chart(ctx,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-    plugins:{legend:{position:'top',labels:{font:{size:10},usePointStyle:true,boxWidth:8,color:TC}}},
-    scales:{x:{...bs.x,ticks:{...bs.x.ticks,maxRotation:0,autoSkip:true,maxTicksLimit:14}},y:{...bs.y,position:'left'},y2:{type:'linear',position:'right',beginAtZero:true,ticks:{font:{size:10},color:TC},grid:{drawOnChartArea:false}}}}});
+    plugins:{legend:{position:'top',labels:{font:{size:10},usePointStyle:true,boxWidth:8,color:TC}},tooltip:{callbacks:{label:c=>{
+      const l=c.dataset.label;
+      if(l.includes('$')||l.includes('Spend')||l.includes('CPM')||l.includes('CPR')||l.includes('Cost'))return c.raw==null?` ${l}: —`:` ${l}: $${(+c.raw).toFixed(2)}`;
+      if(l.includes('%'))return ` ${l}: ${(+c.raw).toFixed(2)}%`;
+      return ` ${l}: ${c.raw}`;
+    }}}},
+    scales:{
+      x:{...bs.x,ticks:{...bs.x.ticks,maxRotation:0,autoSkip:true,maxTicksLimit:14}},
+      y:{...bs.y,position:'left',title:{display:true,text:'$',font:{size:10},color:TC},ticks:{...bs.y.ticks,callback:v=>'$'+v}},
+      y2:{type:'linear',position:'right',beginAtZero:true,title:{display:true,text:'%',font:{size:10},color:TC},ticks:{font:{size:10},color:TC,callback:v=>v+'%'},grid:{drawOnChartArea:false}},
+      y3:{type:'linear',display:false,beginAtZero:true},
+      y4:{type:'linear',display:false,beginAtZero:true},
+    }}});
 }
 
 /* ══════════ VIDEO ══════════ */
