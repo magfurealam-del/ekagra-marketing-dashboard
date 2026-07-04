@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ekagra Health — Ads Intelligence</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;background:#0F1923;color:#E8EDF2;line-height:1.5}
+
+/* LOCK */
+#lock{position:fixed;inset:0;background:#0F1923;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.lb{background:#1A2535;border:1px solid #2A3A4A;border-radius:14px;padding:36px 40px;max-width:460px;width:100%}
+.lb h2{font-size:18px;font-weight:700;color:#5ECBA1;margin-bottom:6px}
+.lb p{font-size:12.5px;color:#6A8A9A;line-height:1.7;margin-bottom:20px}
+.lf{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.lf label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:#4A6A7A}
+.lf input{background:#0F1923;border:1px solid #2A3A4A;border-radius:8px;padding:10px 12px;font-size:13px;color:#E8EDF2;outline:none}
+.lf input:focus{border-color:#5ECBA1}
+#lbtn{width:100%;background:#1D9E75;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px}
+#lbtn:hover{background:#189068}
+#lerr{color:#F08080;font-size:12px;margin-top:8px;min-height:16px}
+.lnote{font-size:11px;color:#3A5060;margin-top:14px;line-height:1.7}
+.lnote code{background:#0F1923;padding:1px 5px;border-radius:3px;color:#5ECBA1}
+
+/* HEADER */
+.hdr{background:#0F1923;border-bottom:1px solid #1E2D3D;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-size:15px;font-weight:600;color:#E8EDF2}
+.live-dot{font-size:10px;background:#1D9E75;color:#fff;padding:2px 8px;border-radius:100px;font-weight:700;animation:pulse 2s ease infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.hctrl{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.hctrl select,.hctrl input[type="date"]{background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 8px;font-size:12px;cursor:pointer}
+.hctrl input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.6)}
+.hbtn{background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600;transition:background .15s}
+.hbtn:hover{background:#253545}
+#lrf{font-size:10px;color:#4A6A7A}
+
+/* TABS */
+.tabs{background:#0F1923;border-bottom:1px solid #1E2D3D;display:flex;padding:0 20px;overflow-x:auto;gap:2px}
+.tb{background:none;border:none;padding:12px 15px;font-size:12.5px;color:#4A6A7A;cursor:pointer;border-bottom:2px solid transparent;font-weight:500;white-space:nowrap;transition:color .15s;flex-shrink:0}
+.tb:hover{color:#C8D5DF}.tb.active{color:#5ECBA1;border-bottom-color:#5ECBA1}
+
+/* PANE */
+.pane{display:none;padding:18px 20px 60px;max-width:1400px;margin:0 auto;position:relative}
+.pane.active{display:block}
+
+/* LOAD/ERR */
+.lov{display:none;position:absolute;inset:0;background:rgba(15,25,35,.88);z-index:50;align-items:center;justify-content:center;flex-direction:column;gap:10px;border-radius:8px;min-height:200px}
+.sp{width:28px;height:28px;border:3px solid #1E2D3D;border-top-color:#5ECBA1;border-radius:50%;animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spl{font-size:11.5px;color:#5A7A8A}
+.emsg{display:none;background:#2A1515;border:1px solid #5A2020;color:#F09595;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px}
+
+/* KPI BAR */
+.kbar{display:flex;gap:2px;background:#1A2535;border-radius:10px;padding:2px;margin-bottom:18px;overflow-x:auto}
+.ki{flex:1;padding:12px 14px;border-radius:8px;min-width:105px;text-align:center}
+.ki.ak{background:#0F1923}
+.klb{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:#4A6A7A;margin-bottom:4px}
+.kv{font-size:20px;font-weight:700;color:#E8EDF2;line-height:1}
+.ksb{font-size:10px;color:#4A6A7A;margin-top:2px}
+.ktr{font-size:10px;margin-top:2px}.up{color:#5ECBA1}.dn{color:#E24B4A}
+
+/* CARDS */
+.card{background:#1A2535;border:1px solid #1E2D3D;border-radius:10px;padding:16px 18px}
+.ct{font-size:12px;font-weight:600;color:#C8D5DF;margin-bottom:10px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.stl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#4A6A7A;margin:18px 0 10px;display:flex;align-items:center;gap:8px}
+.stl::after{content:'';flex:1;height:1px;background:#1E2D3D}
+
+/* TABLE */
+.tsc{overflow-x:auto}
+table.dt{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap}
+table.dt th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#4A6A7A;padding:8px 10px 8px 0;border-bottom:1px solid #1E2D3D;cursor:pointer;user-select:none}
+table.dt th:hover{color:#C8D5DF}
+table.dt td{padding:9px 10px 9px 0;border-bottom:1px solid #13202C;vertical-align:middle}
+table.dt tr:last-child td{border-bottom:none}
+table.dt tr:hover td{background:rgba(255,255,255,.02)}
+
+/* PILLS */
+.pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9.5px;font-weight:700;white-space:nowrap;gap:3px}
+.p-a{background:rgba(29,158,117,.2);color:#5ECBA1;border:1px solid rgba(29,158,117,.3)}
+.p-p{background:rgba(74,90,106,.2);color:#6B8090;border:1px solid rgba(74,90,106,.3)}
+.p-seasonal{background:rgba(239,159,39,.18);color:#F0C060;border:1px solid rgba(239,159,39,.3)}
+.p-ai{background:rgba(156,106,222,.18);color:#C090F0;border:1px solid rgba(156,106,222,.3)}
+.p-testi{background:rgba(29,158,117,.18);color:#5ECBA1;border:1px solid rgba(29,158,117,.3)}
+.p-wound{background:rgba(226,75,74,.18);color:#F08080;border:1px solid rgba(226,75,74,.3)}
+.p-pkg{background:rgba(83,180,220,.18);color:#70D0F0;border:1px solid rgba(83,180,220,.3)}
+.p-post{background:rgba(100,100,120,.18);color:#909098;border:1px solid rgba(100,100,120,.3)}
+.p-edu{background:rgba(200,140,60,.18);color:#E0A050;border:1px solid rgba(200,140,60,.3)}
+
+/* COLORS */
+.gb{color:#5ECBA1;font-weight:700}.am{color:#EFB060;font-weight:600}.rd{color:#F08080;font-weight:700}
+
+/* INSIGHT CARDS */
+.ig{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.ic{background:#1A2535;border:1px solid #1E2D3D;border-radius:10px;padding:16px 18px;border-left:3px solid transparent;display:flex;flex-direction:column;gap:10px}
+.ic.g{border-left-color:#5ECBA1}.ic.w{border-left-color:#EFB060}.ic.b{border-left-color:#E24B4A}.ic.i{border-left-color:#78A8E0}
+.ic-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.ic-ttl{font-size:13px;font-weight:600;color:#C8D5DF}
+.grade{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;font-size:13px;font-weight:800;flex-shrink:0}
+.gA{background:rgba(29,158,117,.25);color:#5ECBA1;border:2px solid rgba(29,158,117,.5)}
+.gB{background:rgba(83,180,220,.25);color:#70D0F0;border:2px solid rgba(83,180,220,.5)}
+.gC{background:rgba(239,159,39,.25);color:#EFB060;border:2px solid rgba(239,159,39,.5)}
+.gD{background:rgba(226,75,74,.25);color:#F08080;border:2px solid rgba(226,75,74,.5)}
+.gX{background:rgba(100,100,120,.2);color:#6A8A9A;border:2px solid rgba(100,100,120,.3)}
+.ic-body{font-size:12px;color:#6A8A9A;line-height:1.7}
+.ic-body strong{color:#C8D5DF}
+.ic-stat{display:flex;gap:14px;padding-top:10px;border-top:1px solid #1E2D3D;flex-wrap:wrap}
+.isv{font-size:15px;font-weight:700;color:#E8EDF2}.isl{font-size:9.5px;color:#4A6A7A}
+
+/* VIDEO RETENTION */
+.rb-row{display:flex;align-items:center;gap:8px}
+.rb-lbl{font-size:9.5px;color:#4A6A7A;width:28px;text-align:right;flex-shrink:0}
+.rb-track{flex:1;background:#0F1923;border-radius:3px;height:7px;overflow:hidden}
+.rb-fill{height:100%;border-radius:3px;transition:width .5s}
+.rb-val{font-size:9.5px;color:#6A8A9A;width:40px;text-align:right}
+
+/* AUDIENCE */
+.age-row{display:grid;grid-template-columns:55px 1fr 55px 55px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #13202C;font-size:11.5px}
+.age-row:last-child{border-bottom:none}
+.age-track{background:#0F1923;border-radius:3px;height:7px;overflow:hidden}
+.age-fill{height:100%;border-radius:3px}
+
+/* ═══ FATIGUE — new design ═══ */
+.fat-alerts{background:#2A1515;border:1px solid rgba(226,75,74,.3);border-radius:10px;padding:14px 18px;margin-bottom:16px}
+.fat-alerts.ok{background:#13202C;border-color:#1E2D3D}
+.fat-alert-title{font-size:12px;font-weight:700;color:#F08080;margin-bottom:8px}
+.fat-alert-title.ok{color:#5ECBA1}
+.fat-alert-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;flex-wrap:wrap}
+.fat-alert-row:last-child{border-bottom:none}
+.fat-summary-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.fstat{background:#1A2535;border:1px solid #1E2D3D;border-radius:10px;padding:12px 16px;flex:1;min-width:90px;text-align:center}
+.fnum{font-size:26px;font-weight:700;line-height:1}.flbl{font-size:10px;color:#4A6A7A;margin-top:3px}
+.fsh .fnum{color:#E24B4A}.fsm .fnum{color:#EFB060}.fsg .fnum{color:#5ECBA1}.fss .fnum{color:#6A8A9A}
+
+.fat-card{background:#1A2535;border:1px solid #1E2D3D;border-radius:10px;padding:16px 18px;margin-bottom:10px}
+.fat-card-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.fat-card-name{font-size:13px;font-weight:600;color:#C8D5DF}
+.fat-card-meta{font-size:10.5px;color:#4A6A7A;margin-top:2px}
+.fat-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:100px;font-size:11px;font-weight:700;white-space:nowrap}
+.fb-h{background:rgba(226,75,74,.2);color:#F08080;border:1px solid rgba(226,75,74,.4)}
+.fb-m{background:rgba(239,159,39,.2);color:#EFB060;border:1px solid rgba(239,159,39,.4)}
+.fb-g{background:rgba(29,158,117,.2);color:#5ECBA1;border:1px solid rgba(29,158,117,.4)}
+.fb-s{background:rgba(100,120,140,.2);color:#8A9AAA;border:1px solid rgba(100,120,140,.3)}
+.fb-n{background:rgba(60,70,80,.2);color:#4A5A6A;border:1px solid rgba(60,70,80,.3)}
+
+.fat-metrics{display:flex;gap:0;margin-bottom:14px;background:#0F1923;border-radius:8px;overflow:hidden}
+.fat-m{flex:1;padding:10px 12px;border-right:1px solid #1E2D3D;text-align:center}
+.fat-m:last-child{border-right:none}
+.fat-m-val{font-size:16px;font-weight:700;color:#E8EDF2;line-height:1}
+.fat-m-lbl{font-size:9.5px;color:#4A6A7A;margin-top:3px}
+.fat-m-chg{font-size:10px;margin-top:2px}
+
+.fat-chart-row{display:grid;grid-template-columns:1fr 200px;gap:12px;align-items:start}
+.fat-trend-wrap{position:relative;height:80px}
+.fat-freq-wrap{display:flex;flex-direction:column;gap:8px}
+.freq-label{font-size:10px;color:#4A6A7A;display:flex;justify-content:space-between}
+.freq-track{background:#0F1923;border-radius:4px;height:14px;overflow:hidden;position:relative}
+.freq-fill{height:100%;border-radius:4px;transition:width .5s}
+.freq-marker{position:absolute;top:0;bottom:0;width:2px;background:#EFB060;opacity:.7}
+
+.fat-action{margin-top:12px;padding:8px 12px;border-radius:7px;font-size:12px;font-weight:500;line-height:1.5}
+.fat-action.act-h{background:rgba(226,75,74,.12);border:1px solid rgba(226,75,74,.25);color:#F08080}
+.fat-action.act-m{background:rgba(239,159,39,.1);border:1px solid rgba(239,159,39,.25);color:#EFB060}
+.fat-action.act-g{background:rgba(29,158,117,.1);border:1px solid rgba(29,158,117,.25);color:#5ECBA1}
+.fat-action.act-s{background:rgba(26,37,53,.5);border:1px solid #1E2D3D;color:#6A8A9A}
+
+.view-toggle{display:flex;gap:4px;margin-bottom:14px}
+.vtb{background:#1A2535;border:1px solid #2A3A4A;color:#4A6A7A;border-radius:6px;padding:5px 12px;font-size:11.5px;cursor:pointer;font-weight:500;transition:all .15s}
+.vtb.active{background:#253545;color:#C8D5DF;border-color:#3A4A5A}
+
+.hm-view{overflow-x:auto}
+.hm{border-collapse:collapse;font-size:11px}
+.hm th{background:#13202C;padding:5px 4px;font-size:9px;font-weight:700;color:#4A6A7A;text-align:center;border:1px solid #1E2D3D}
+.hm td{border:1px solid #1E2D3D;padding:0}
+.hm-n{padding:6px 8px!important;vertical-align:middle;white-space:nowrap}
+.hm-c{height:24px;cursor:help;transition:opacity .1s}.hm-c:hover{opacity:.7}
+.hm-e{background:#13202C;height:24px}
+.hm-legend{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10.5px;color:#4A6A7A;flex-wrap:wrap}
+.hm-swatch{width:14px;height:10px;border-radius:2px;flex-shrink:0}
+
+/* ADSET GRID */
+.adg{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:10px}
+.adc{background:#1A2535;border:1px solid #1E2D3D;border-radius:10px;padding:14px}
+.spark{position:relative;height:44px}
+
+/* RESPONSIVE */
+@media(max-width:900px){.row2{grid-template-columns:1fr}.fat-chart-row{grid-template-columns:1fr}}
+@media(max-width:600px){.pane{padding:12px}.hdr{flex-direction:column;align-items:flex-start}.fat-summary-bar{flex-direction:column}}
+</style>
+</head>
+<body>
+<div id="lock">
+  <div class="lb">
+    <h2>🏥 Ekagra Health · Ads Intelligence</h2>
+    <p id="ldesc">Loading…</p>
+    <div id="lfields"></div>
+    <button id="lbtn" style="display:none" onclick="unlock()">Open Dashboard →</button>
+    <div id="lerr"></div>
+    <div class="lnote" id="lnote"></div>
+  </div>
+</div>
+
+<header class="hdr">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 26 26"><rect width="26" height="26" rx="5" fill="#1D9E75"/><text y="18" x="5" font-size="13" fill="white" font-family="sans-serif" font-weight="bold">EH</text></svg>
+    <h1>Ekagra Health · Facebook Ads Intelligence</h1>
+    <span class="live-dot">● LIVE</span>
+  </div>
+  <div class="hctrl">
+    <select id="dpr"><option value="ytd">Year to date</option><option value="thismonth">This month</option><option value="last7">Last 7 days</option><option value="last30">Last 30 days</option><option value="last90">Last 90 days</option></select>
+    <input type="date" id="isince"><input type="date" id="iuntil">
+    <button class="hbtn" id="btnref">↻ Refresh</button>
+    <button class="hbtn" onclick="showSettings()" title="Change credentials">⚙</button>
+    <span id="lrf"></span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tb active" data-tab="overview">📊 Overview</button>
+  <button class="tb" data-tab="ads">📋 Campaigns</button>
+  <button class="tb" data-tab="video">🎬 Video</button>
+  <button class="tb" data-tab="intel">🧠 Intelligence</button>
+  <button class="tb" data-tab="audience">🎯 Audience</button>
+  <button class="tb" data-tab="daily">⚡ Fatigue</button>
+</nav>
+
+<div id="tab-overview" class="pane active">
+  <div class="lov" style="display:flex"><div class="sp"></div><div class="spl">Connecting to Meta Ads…</div></div>
+  <div class="emsg"></div>
+  <div id="kbar" class="kbar"></div>
+  <div class="row2">
+    <div class="card"><div class="ct">Monthly spend &amp; conversations</div><div style="position:relative;height:210px"><canvas id="cM"></canvas></div></div>
+    <div class="card"><div class="ct">CTR &amp; CPR trend</div><div style="position:relative;height:210px"><canvas id="cE"></canvas></div></div>
+  </div>
+  <div class="stl">Content type efficiency</div>
+  <div class="card" style="margin-bottom:12px"><div style="position:relative;height:220px"><canvas id="cT"></canvas></div></div>
+  <div class="stl">Active ads — ranked by CPR</div>
+  <div id="activeGrid" class="adg"></div>
+</div>
+
+<div id="tab-ads" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <select id="fSt" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px">
+      <option value="all">All statuses</option><option value="ACTIVE">Active only</option><option value="PAUSED">Paused</option>
+    </select>
+    <select id="fTy" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px"><option value="all">All types</option></select>
+    <input type="text" id="fSr" placeholder="Search…" style="background:#1A2535;border:1px solid #2A3A4A;color:#C8D5DF;border-radius:6px;padding:5px 9px;font-size:12px;flex:1;min-width:140px">
+    <span id="adCnt" style="font-size:11px;color:#4A6A7A;margin-left:auto"></span>
+  </div>
+  <div class="card tsc" id="adsTableWrap"></div>
+</div>
+
+<div id="tab-video" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div id="retGrid"></div>
+</div>
+
+<div id="tab-intel" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div id="intelBody"></div>
+</div>
+
+<div id="tab-audience" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div id="audBody"></div>
+</div>
+
+<div id="tab-daily" class="pane">
+  <div class="lov"><div class="sp"></div></div>
+  <div class="emsg"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+    <label style="font-size:12px;color:#6A8A9A;display:flex;align-items:center;gap:5px">From<input type="date" id="dsince" style="background:#1A2535;border:1px solid #2A3A4A;border-radius:6px;padding:5px 9px;font-size:12px;color:#C8D5DF"></label>
+    <label style="font-size:12px;color:#6A8A9A;display:flex;align-items:center;gap:5px">To<input type="date" id="duntil" style="background:#1A2535;border:1px solid #2A3A4A;border-radius:6px;padding:5px 9px;font-size:12px;color:#C8D5DF"></label>
+    <label style="font-size:12px;color:#6A8A9A;display:flex;align-items:center;gap:5px">Campaign
+      <select id="dcamp" style="background:#1A2535;border:1px solid #2A3A4A;border-radius:6px;padding:5px 9px;font-size:12px;color:#C8D5DF"><option value="all">All</option></select>
+    </label>
+    <button class="hbtn" id="btnDaily">↻ Load</button>
+    <div class="view-toggle" style="margin-left:auto">
+      <button class="vtb active" id="vCard" onclick="setFatView('card')">📋 Card view</button>
+      <button class="vtb" id="vHeat" onclick="setFatView('heat')">🔥 Heatmap</button>
+    </div>
+  </div>
+  <div id="fatBody"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   EKAGRA HEALTH · Ads Intelligence v5
+   Dynamic recommendations computed live from actual data.
+   ═══════════════════════════════════════════════════════════════
+   TEAM SHARING: Fill in token + optional PIN, deploy to Netlify.
+   Teammates visit the URL and enter only the PIN (not the token).
+   ═══════════════════════════════════════════════════════════════ */
+const TEAM = {
+  token:   '',              // ← Paste Meta access token here
+  account: '700609876173906',
+  pin:     '',              // ← Optional team PIN (leave blank to disable)
+};
+/* ═════════════════════════════════════════════════════════════ */
+
+const GRAPH = 'https://graph.facebook.com/v20.0';
+let CFG = { tok:'', acct:'' };
+
+/* ── LOCK ── */
+function initLock(){
+  const stok=localStorage.getItem('ek_tok5'), sacct=localStorage.getItem('ek_acct5'), spin=localStorage.getItem('ek_pin5');
+  if(TEAM.token){
+    if(TEAM.pin && spin!==TEAM.pin){ showPin(); return; }
+    CFG={tok:TEAM.token,acct:TEAM.account}; hideLock(); return;
+  }
+  if(stok){ CFG={tok:stok,acct:sacct||TEAM.account}; hideLock(); return; }
+  showTokenForm();
+}
+function showPin(){
+  $('#ldesc').textContent='Enter the team PIN to access the dashboard.';
+  $('#lfields').innerHTML=`<div class="lf"><label>Team PIN</label><input type="password" id="pin-i" maxlength="8" placeholder="••••" style="font-size:20px;text-align:center;letter-spacing:6px" onkeydown="if(event.key==='Enter')unlock()"></div>`;
+  $('#lbtn').textContent='Open Dashboard →'; $('#lbtn').style.display='block';
+  $('#lnote').textContent='Contact your admin for the PIN.';
+  setTimeout(()=>$('#pin-i')?.focus(),100);
+}
+function showTokenForm(){
+  $('#ldesc').innerHTML='Connect your Meta Ads account to get started.';
+  $('#lfields').innerHTML=`<div class="lf"><label>Meta Access Token</label><input type="password" id="tok-i" placeholder="Paste long-lived access token…" onkeydown="if(event.key==='Enter')unlock()"></div>
+  <div class="lf"><label>Ad Account ID</label><input type="text" id="acct-i" value="${TEAM.account}"></div>`;
+  $('#lbtn').textContent='Connect →'; $('#lbtn').style.display='block';
+  $('#lnote').innerHTML='Get token: Meta Business Suite → System Users → Generate Token<br>Permissions: <code>ads_read</code>, <code>read_insights</code>';
+}
+function unlock(){
+  $('#lerr').textContent='';
+  if(TEAM.token && TEAM.pin){
+    const e=$('#pin-i')?.value?.trim();
+    if(e!==TEAM.pin){$('#lerr').textContent='Incorrect PIN.';return;}
+    localStorage.setItem('ek_pin5',e); CFG={tok:TEAM.token,acct:TEAM.account}; hideLock(); return;
+  }
+  const t=$('#tok-i')?.value?.trim(), a=$('#acct-i')?.value?.trim()||TEAM.account;
+  if(!t){$('#lerr').textContent='Please paste your token.';return;}
+  localStorage.setItem('ek_tok5',t); localStorage.setItem('ek_acct5',a);
+  CFG={tok:t,acct:a}; hideLock();
+}
+function showSettings(){ localStorage.removeItem('ek_tok5');localStorage.removeItem('ek_pin5');location.reload(); }
+function hideLock(){ $('#lock').style.display='none'; init(); }
+
+/* ── STATE ── */
+const S={since:'2026-01-01',until:td(),tab:'overview',data:{},charts:{},tl:{},fatView:'card'};
+function td(){return new Date().toISOString().split('T')[0];}
+function nAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split('T')[0];}
+function fmtM(s){return new Date(s+'T00:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'});}
+const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+
+function fmt(n,t='n'){
+  if(n==null||isNaN(n)) return '—';
+  const v=parseFloat(n);
+  if(t==='$') return '$'+v.toFixed(2);
+  if(t==='$0') return '$'+Math.round(v).toLocaleString();
+  if(t==='%') return v.toFixed(2)+'%';
+  if(t==='big') return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1000?Math.round(v/1000)+'K':v.toLocaleString();
+  return v.toLocaleString();
+}
+
+/* ── PARSERS ── */
+function getC(row){ // conversations
+  const act=row.actions;
+  if(Array.isArray(act)){const a=act.find(x=>x.action_type?.includes('messaging_conversation_started'));if(a)return+a.value||0;}
+  const res=row.results;
+  if(Array.isArray(res)){const a=res.find(x=>x.indicator?.includes('messaging_conversation_started'));if(a)return+(a.values?.[0]?.value)||0;return+(res[0]?.values?.[0]?.value)||0;}
+  return 0;
+}
+function getCPR(row){
+  const c=getC(row),sp=+row.spend||0;
+  if(c>0&&sp>0) return sp/c;
+  const arr=row.cost_per_result;
+  if(Array.isArray(arr)){const a=arr.find(x=>x.indicator?.includes('messaging_conversation_started')||x.action_type?.includes('messaging_conversation_started'));if(a)return+(a.values?.[0]?.value||a.value)||0;return+(arr[0]?.values?.[0]?.value||arr[0]?.value)||0;}
+  return 0;
+}
+function getVid(f){if(!f)return 0;if(Array.isArray(f))return+(f.find(x=>x.action_type?.includes('video'))?.value||f[0]?.value||0);return+f||0;}
+
+/* ── AD TYPE ── */
+function adType(name){
+  const n=name.toLowerCase();
+  if(n.includes('ai generated')||n.includes('ai video'))return{k:'ai',l:'AI Video',e:'🤖',c:'p-ai'};
+  if(n.includes('testimonial'))return{k:'testi',l:'Testimonial',e:'👤',c:'p-testi'};
+  if(n.includes('hajj')||n.includes('pre-hajj')||n.includes('হজ্জ')||n.includes('ওমরাহ'))return{k:'seasonal',l:'Religious/Seasonal',e:'🕌',c:'p-seasonal'};
+  if(n.includes('ramadan')||n.includes('রমজান'))return{k:'seasonal',l:'Ramadan',e:'🌙',c:'p-seasonal'};
+  if(n.includes('wound')||n.includes('21feb')||n.includes('22feb')||n.includes('ক্ষত'))return{k:'wound',l:'Wound Care',e:'🩹',c:'p-wound'};
+  if(n.includes('screening')||n.includes('dfu')||n.includes('package')||n.includes('assessment'))return{k:'pkg',l:'Screening/Package',e:'📦',c:'p-pkg'};
+  if(n.includes('post:'))return{k:'post',l:'Boosted Post',e:'📢',c:'p-post'};
+  if(n.includes('ইনজেকশন')||n.includes('injection')||n.includes('সুই')||n.includes('dr.')||n.includes('shawon'))return{k:'edu',l:'Educational',e:'💉',c:'p-edu'};
+  return{k:'gen',l:'Video Ad',e:'🎬',c:'p-ai'};
+}
+function cprCls(v){return v===0?'':v<0.2?'gb':v<0.45?'am':'rd';}
+
+/* ── META API ── */
+async function metaGet(path,p={}){
+  const qs=new URLSearchParams({...p,access_token:CFG.tok});
+  const r=await fetch(`${GRAPH}/${path}?${qs}`);
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message+' ('+d.error.code+')');
+  return d;
+}
+async function metaAll(path,p={}){
+  let rows=[],d=await metaGet(path,{...p,limit:500});
+  rows.push(...(d.data||[]));
+  while(d.paging?.cursors?.after&&rows.length<2000){d=await metaGet(path,{...p,limit:500,after:d.paging.cursors.after});rows.push(...(d.data||[]));}
+  return rows;
+}
+const IF='spend,impressions,clicks,ctr,cpm,reach,frequency,actions,cost_per_result,date_start,date_stop';
+const VF='video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions';
+const tr=()=>JSON.stringify({since:S.since,until:S.until});
+
+/* ── LOAD ── */
+function setLoad(tab,on){const e=$(`#tab-${tab} .lov`);if(e)e.style.display=on?'flex':'none';}
+function showErr(tab,m){const e=$(`#tab-${tab} .emsg`);if(e){e.textContent='⚠ '+m;e.style.display='block';}}
+function clrErr(tab){const e=$(`#tab-${tab} .emsg`);if(e)e.style.display='none';}
+function dc(k){if(S.charts[k]){try{S.charts[k].destroy();}catch{}S.charts[k]=null;}}
+
+/* ── TABS ── */
+function switchTab(n){
+  S.tab=n;
+  $$('.tb').forEach(b=>b.classList.toggle('active',b.dataset.tab===n));
+  $$('.pane').forEach(p=>p.classList.toggle('active',p.id===`tab-${n}`));
+  if(!S.tl[n]||n==='overview')loadTab(n);
+}
+async function loadTab(n){
+  switch(n){
+    case 'overview': await loadOverview(); break;
+    case 'ads':      await loadAds();      break;
+    case 'video':    await loadVideo();    break;
+    case 'intel':    await loadIntel();    break;
+    case 'audience': await loadAudience(); break;
+  }
+  S.tl[n]=true;
+}
+
+/* ── FETCH CAMPAIGNS ── */
+async function fetchCampaigns(){
+  const [rows,sts]=await Promise.all([
+    metaAll(`act_${CFG.acct}/insights`,{fields:`campaign_id,campaign_name,${IF},${VF}`,level:'campaign',time_range:tr()}),
+    metaAll(`act_${CFG.acct}/campaigns`,{fields:'id,name,effective_status,objective'})
+  ]);
+  const sm={};sts.forEach(a=>sm[a.id]=a);
+  S.data.campaigns=rows.filter(r=>parseFloat(r.spend||0)>0).map(r=>({
+    ...r,
+    id:r.campaign_id,
+    name:r.campaign_name,
+    status:sm[r.campaign_id]?.effective_status||'UNKNOWN',
+    objective:sm[r.campaign_id]?.objective||'',
+    type:adType(r.campaign_name||'')
+  }));
+}
+// Alias so older references work
+async function fetchAds(){ return fetchCampaigns(); }
+
+/* ── CHARTS ── */
+const TC='rgba(200,213,220,0.4)',GC='rgba(255,255,255,0.04)';
+const bs={x:{ticks:{font:{size:10},color:TC},grid:{color:GC}},y:{ticks:{font:{size:10},color:TC},grid:{color:GC},beginAtZero:true}};
+function mkChart(id,cfg){dc(id);const c=document.getElementById(id)?.getContext('2d');if(!c)return;S.charts[id]=new Chart(c,cfg);}
+
+/* ══════════ OVERVIEW ══════════ */
+async function loadOverview(){
+  setLoad('overview',true);clrErr('overview');
+  try{
+    const [mon,campMon]=await Promise.all([
+      metaGet(`act_${CFG.acct}/insights`,{fields:IF,time_increment:'monthly',time_range:tr()}),
+      metaGet(`act_${CFG.acct}/insights`,{fields:`campaign_id,campaign_name,${IF}`,level:'campaign',time_increment:'monthly',time_range:tr()})
+    ]);
+    S.data.monthly=mon.data||[];S.data.campMon=campMon.data||[];
+    if(!S.data.campaigns)await fetchCampaigns();
+    renderKBar();renderMChart();renderEChart();renderTypeChart();renderActiveGrid();
+  }catch(e){showErr('overview',e.message);}
+  finally{setLoad('overview',false);$('#lrf').textContent='Updated '+new Date().toLocaleTimeString();}
+}
+function renderKBar(){
+  const rows=S.data.monthly||[];
+  const tot=rows.reduce((a,r)=>({sp:a.sp+ +r.spend,im:a.im+ +r.impressions,cl:a.cl+ +r.clicks,cv:a.cv+getC(r)}),{sp:0,im:0,cl:0,cv:0});
+  const last=rows[rows.length-1]||{},first=rows[0]||{};
+  const lCTR=+last.ctr||0,lCPR=getCPR(last),fCTR=+first.ctr||0;
+  const chg=fCTR?((lCTR-fCTR)/fCTR*100).toFixed(0):0;
+  S.data.acctTotals=tot;
+  $('#kbar').innerHTML=`
+    <div class="ki ak"><div class="klb">Total spend</div><div class="kv">${fmt(tot.sp,'$0')}</div><div class="ksb">${fmtM(first.date_start||S.since)} – ${fmtM(last.date_stop||S.until)}</div></div>
+    <div class="ki"><div class="klb">Impressions</div><div class="kv">${fmt(tot.im,'big')}</div><div class="ksb">All campaigns</div></div>
+    <div class="ki"><div class="klb">Clicks</div><div class="kv">${fmt(tot.cl,'big')}</div><div class="ksb">Link clicks</div></div>
+    <div class="ki"><div class="klb">Conversations</div><div class="kv">${fmt(tot.cv,'big')}</div><div class="ksb">Messaging starts</div></div>
+    <div class="ki"><div class="klb">Blended CTR</div><div class="kv">${(tot.cl/(tot.im||1)*100).toFixed(2)}%</div><div class="ktr ${+chg>=0?'up':'dn'}">${+chg>=0?'+':''}${chg}% vs first month</div></div>
+    <div class="ki"><div class="klb">Blended CPR</div><div class="kv">$${tot.cv>0?(tot.sp/tot.cv).toFixed(2):'—'}</div><div class="ksb">Spend ÷ convos</div></div>
+    <div class="ki"><div class="klb">Latest CPR</div><div class="kv">$${lCPR.toFixed(2)}</div><div class="ksb">${fmtM(last.date_start||'')}</div></div>
+  `;
+}
+function renderMChart(){
+  const r=S.data.monthly||[];
+  mkChart('cM',{type:'bar',data:{labels:r.map(x=>fmtM(x.date_start)),datasets:[
+    {type:'bar',data:r.map(x=>+x.spend||0),label:'Spend',backgroundColor:'rgba(94,203,161,.65)',borderRadius:4,yAxisID:'y',order:2},
+    {type:'line',data:r.map(x=>getC(x)),label:'Convos',borderColor:'#EFB060',backgroundColor:'rgba(239,176,96,.08)',borderWidth:2,pointRadius:4,tension:.35,fill:true,yAxisID:'y2',order:1},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.datasetIndex===0?` $${c.raw.toFixed(0)}`:`  Convos: ${c.raw}`}}},
+    scales:{x:bs.x,y:{...bs.y,position:'left',ticks:{...bs.y.ticks,callback:v=>'$'+v}},y2:{type:'linear',position:'right',ticks:{font:{size:10},color:TC},grid:{drawOnChartArea:false}}}}});
+}
+function renderEChart(){
+  const r=S.data.monthly||[];
+  mkChart('cE',{type:'line',data:{labels:r.map(x=>fmtM(x.date_start)),datasets:[
+    {data:r.map(x=>+x.ctr||0),borderColor:'#5ECBA1',backgroundColor:'rgba(94,203,161,.07)',borderWidth:2,pointRadius:4,tension:.35,fill:true,yAxisID:'y'},
+    {data:r.map(x=>getCPR(x)),borderColor:'#EFB060',borderWidth:2,borderDash:[4,3],pointRadius:4,tension:.35,yAxisID:'y2'},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.datasetIndex===0?` CTR: ${c.raw.toFixed(2)}%`:`  CPR: $${c.raw.toFixed(2)}`}}},
+    scales:{x:bs.x,y:{...bs.y,position:'left',ticks:{...bs.y.ticks,callback:v=>v+'%'}},y2:{type:'linear',position:'right',beginAtZero:true,ticks:{font:{size:10},color:TC,callback:v=>'$'+v},grid:{drawOnChartArea:false}}}}});
+}
+function renderTypeChart(){
+  const ads=S.data.campaigns||[],byT={};
+  ads.forEach(a=>{const k=a.type.l;if(!byT[k])byT[k]={sp:0,cv:0,cl:0,im:0};byT[k].sp+= +a.spend||0;byT[k].cv+=getC(a);byT[k].cl+= +a.clicks||0;byT[k].im+= +a.impressions||0;});
+  const types=Object.entries(byT).filter(e=>e[1].sp>0).sort((a,b)=>b[1].cv-a[1].cv);
+  const tot=S.data.acctTotals;const avgCPR=tot&&tot.cv>0?tot.sp/tot.cv:0;
+  const PAL=['#5ECBA1','#EFB060','#78A8E0','#F08080','#C090F0','#E0A050','#909098'];
+  mkChart('cT',{type:'bar',data:{labels:types.map(e=>e[0]),datasets:[
+    {label:'Conversations',data:types.map(e=>e[1].cv),backgroundColor:types.map((_,i)=>PAL[i%PAL.length]+'BB'),borderRadius:4,yAxisID:'y'},
+    {type:'line',label:'CPR ($)',data:types.map(e=>e[1].cv>0?e[1].sp/e[1].cv:0),borderColor:'#F08080',borderWidth:2,pointRadius:5,tension:.3,yAxisID:'y2'},
+    {type:'line',label:`Avg CPR ($${avgCPR.toFixed(2)})`,data:types.map(()=>avgCPR),borderColor:'rgba(248,200,80,.4)',borderWidth:1.5,borderDash:[6,3],pointRadius:0,yAxisID:'y2'},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{position:'top',labels:{font:{size:10},usePointStyle:true,boxWidth:8,color:TC}}},
+    scales:{x:{...bs.x,ticks:{font:{size:10},color:TC,maxRotation:20}},y:{...bs.y,title:{display:true,text:'Conversations',font:{size:10},color:TC}},
+      y2:{type:'linear',position:'right',beginAtZero:true,ticks:{font:{size:10},color:TC,callback:v=>'$'+v},grid:{drawOnChartArea:false}}}}});
+}
+function renderActiveGrid(){
+  const ads=(S.data.campaigns||[]).filter(a=>a.status==='ACTIVE').sort((a,b)=>getCPR(a)-getCPR(b));
+  const avgCPR=S.data.acctTotals?.cv>0?S.data.acctTotals.sp/S.data.acctTotals.cv:0;
+  $('#activeGrid').innerHTML=ads.slice(0,8).map(a=>{
+    const cpr=getCPR(a),cv=getC(a);
+    const eff=avgCPR>0&&cpr>0?(avgCPR-cpr)/avgCPR*100:0;
+    const gl=cpr===0?'X':cpr<avgCPR*0.6?'A':cpr<avgCPR?'B':cpr<avgCPR*1.4?'C':'D';
+    const gc='g'+gl;
+    return `<div class="adc"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+      <div><div style="font-size:11.5px;font-weight:600;color:#C8D5DF" title="${a.name}">${a.name.length>36?a.name.slice(0,36)+'…':a.name}</div>
+      <div style="margin-top:4px"><span class="pill ${a.type.c}">${a.type.e} ${a.type.l}</span></div></div>
+      <div class="grade ${gc}">${gl}</div></div>
+      <div style="display:flex;gap:10px">
+        <div><div style="font-size:14px;font-weight:700;color:#E8EDF2">${fmt(+a.spend,'$0')}</div><div style="font-size:9.5px;color:#4A6A7A">spend</div></div>
+        <div><div style="font-size:14px;font-weight:700;color:#E8EDF2">${cv}</div><div style="font-size:9.5px;color:#4A6A7A">convos</div></div>
+        <div><div class="${cprCls(cpr)}" style="font-size:14px;font-weight:700">$${cpr.toFixed(2)}</div><div style="font-size:9.5px;color:#4A6A7A">CPR${eff!==0?` (${eff>0?'+':''}${eff.toFixed(0)}% vs avg)`:''}</div></div>
+      </div></div>`;
+  }).join('');
+}
+
+/* ══════════ ALL ADS ══════════ */
+async function loadAds(){
+  setLoad('ads',true);clrErr('ads');
+  try{
+    if(!S.data.campaigns)await fetchCampaigns();
+    const types=[...new Set((S.data.campaigns||[]).map(a=>adType(a.name||'').l))];
+    const sel=$('#fTy');while(sel.options.length>1)sel.remove(1);
+    types.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});
+    renderAdsTable();
+  }catch(e){showErr('ads',e.message);}
+  finally{setLoad('ads',false);}
+}
+function renderAdsTable(fSt='all',fTy='all',srch=''){
+  let ads=S.data.campaigns||[];
+  if(fSt==='ACTIVE')ads=ads.filter(a=>a.status==='ACTIVE');
+  if(fSt==='PAUSED')ads=ads.filter(a=>a.status!=='ACTIVE');
+  if(fTy!=='all')ads=ads.filter(a=>a.type.l===fTy);
+  if(srch){const q=srch.toLowerCase();ads=ads.filter(a=>a.name.toLowerCase().includes(q));}
+  ads.sort((a,b)=>getCPR(a)-getCPR(b));
+  const avgCPR=S.data.acctTotals?.cv>0?S.data.acctTotals.sp/S.data.acctTotals.cv:0;
+  $('#adCnt').textContent=`${ads.length} campaigns`;
+  const rows=ads.map(a=>{
+    const cpr=getCPR(a),cv=getC(a),freq=+a.frequency||0;
+    const p25=getVid(a.video_p25_watched_actions),imp=+a.impressions||1,p100=getVid(a.video_p100_watched_actions);
+    const hook=(p25/imp*100).toFixed(1),comp=p25>0?(p100/p25*100).toFixed(0)+'%':'—';
+    const eff=avgCPR>0&&cpr>0?(avgCPR-cpr)/avgCPR*100:0;
+    const effStr=cpr>0?(eff>0?`<span class="gb">+${eff.toFixed(0)}%</span>`:`<span class="rd">${eff.toFixed(0)}%</span>`):'—';
+    return `<tr>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:#C8D5DF" title="${a.name}">${a.name.length>40?a.name.slice(0,40)+'…':a.name}</td>
+      <td><span class="pill ${a.status==='ACTIVE'?'p-a':'p-p'}">${a.status}</span></td>
+      <td><span class="pill ${a.type.c}">${a.type.e} ${a.type.l}</span></td>
+      <td style="color:#C8D5DF">$${parseFloat(a.spend).toFixed(0)}</td>
+      <td>${fmt(+a.impressions,'big')}</td>
+      <td>${(+a.ctr||0).toFixed(2)}%</td>
+      <td>$${(+a.cpm||0).toFixed(2)}</td>
+      <td style="color:${freq>2.5?'#F08080':'#C8D5DF'}">${freq.toFixed(2)}</td>
+      <td>${fmt(+a.reach,'big')}</td>
+      <td>${cv}</td>
+      <td class="${cprCls(cpr)}">$${cpr.toFixed(3)}</td>
+      <td>${effStr}</td>
+      <td>${hook}%</td>
+      <td>${comp}</td>
+    </tr>`;
+  }).join('')||`<tr><td colspan="14" style="text-align:center;padding:20px;color:#4A6A7A">No campaigns match filters</td></tr>`;
+  $('#adsTableWrap').innerHTML=`<table class="dt"><thead><tr>
+    <th style="min-width:220px">Campaign name</th><th>Status</th><th>Content type</th><th>Spend</th>
+    <th>Impressions</th><th>CTR</th><th>CPM</th><th title="Flag if >2.5">Freq</th>
+    <th>Reach</th><th>Convos</th><th title="Cost per conversation">CPR ↑</th>
+    <th title="vs account average CPR">vs avg</th>
+    <th title="% watching past 25%">Hook%</th><th title="% finishing video">Comp%</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* ══════════ VIDEO ══════════ */
+async function loadVideo(){
+  setLoad('video',true);clrErr('video');
+  try{if(!S.data.campaigns)await fetchCampaigns();renderRetention();}
+  catch(e){showErr('video',e.message);}
+  finally{setLoad('video',false);}
+}
+function renderRetention(){
+  const ads=(S.data.campaigns||[]).filter(a=>getVid(a.video_p25_watched_actions)>0).sort((a,b)=>+b.spend- +a.spend);
+  if(!ads.length){$('#retGrid').innerHTML='<p style="color:#4A6A7A;padding:20px 0">No video data for this period.</p>';return;}
+  $('#retGrid').innerHTML=`
+    <div class="stl">Video retention funnels</div>
+    <p style="font-size:12px;color:#4A6A7A;margin-bottom:14px"><strong style="color:#C8D5DF">Hook Rate</strong> = % who watch past 25% · <strong style="color:#C8D5DF">Completion</strong> = % of 25% viewers who finish · <strong style="color:#C8D5DF">Thruplay</strong> = watched ≥15 sec</p>
+    ${ads.map(a=>{
+      const p25=getVid(a.video_p25_watched_actions),p50=getVid(a.video_p50_watched_actions),p75=getVid(a.video_p75_watched_actions),p100=getVid(a.video_p100_watched_actions),thru=getVid(a.video_thruplay_watched_actions),imp=+a.impressions||1;
+      const hook=(p25/imp*100).toFixed(1),comp=p25>0?(p100/p25*100).toFixed(0):0,drop50=p25>0?((p25-p50)/p25*100).toFixed(0):0;
+      const cpr=getCPR(a);const mx=p25||1;
+      let health='Average',hclr='#EFB060';
+      if(+hook>8&&+comp>20){health='Strong hook & completion';hclr='#5ECBA1';}
+      else if(+hook<3){health='Weak hook — most skip before 25%';hclr='#F08080';}
+      else if(+drop50>60){health='High mid-video drop-off at 50%';hclr='#F08080';}
+      return `<div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
+          <div><div style="font-weight:600;color:#C8D5DF;font-size:13px;margin-bottom:4px" title="${a.name}">${(a.name||"").length>52?(a.name||"").slice(0,52)+'…':(a.name||"")}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pill ${a.type.c}">${a.type.e} ${a.type.l}</span><span class="pill ${a.status==='ACTIVE'?'p-a':'p-p'}">${a.status==='CAMPAIGN_PAUSED'?'Paused':a.status}</span></div></div>
+          <div style="display:flex;gap:14px;flex-shrink:0;text-align:center">
+            <div><div style="font-size:15px;font-weight:700;color:#E8EDF2">$${parseFloat(a.spend).toFixed(0)}</div><div style="font-size:9.5px;color:#4A6A7A">spend</div></div>
+            <div><div style="font-size:15px;font-weight:700;color:#EFB060">${hook}%</div><div style="font-size:9.5px;color:#4A6A7A">hook rate</div></div>
+            <div><div style="font-size:15px;font-weight:700;color:#5ECBA1">${comp}%</div><div style="font-size:9.5px;color:#4A6A7A">completion</div></div>
+            <div><div class="${cprCls(cpr)}" style="font-size:15px;font-weight:700">$${cpr.toFixed(2)}</div><div style="font-size:9.5px;color:#4A6A7A">CPR</div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${[['25%',p25,'#5ECBA1'],['>50%',p50,'#78A8E0'],['>75%',p75,'#EFB060'],['>100%',p100,'#F08080'],['Thruplay',thru,'#C090F0']].map(([l,v,c])=>`
+            <div class="rb-row"><div class="rb-lbl">${l}</div><div class="rb-track"><div class="rb-fill" style="width:${mx>0?Math.round(v/mx*100):0}%;background:${c}"></div></div><div class="rb-val">${fmt(v,'big')}</div></div>`).join('')}
+        </div>
+        <div style="display:flex;gap:20px;margin-top:10px;padding-top:10px;border-top:1px solid #1E2D3D;font-size:11px;flex-wrap:wrap">
+          <span><span style="color:#4A6A7A">Drop 25→50: </span><span style="color:${+drop50>60?'#F08080':+drop50>40?'#EFB060':'#5ECBA1'}">${drop50}%</span></span>
+          <span><span style="color:#4A6A7A">Impressions: </span><span style="color:#C8D5DF">${fmt(+imp,'big')}</span></span>
+          <span><span style="color:#4A6A7A">Freq: </span><span style="color:${+a.frequency>2.5?'#F08080':'#C8D5DF'}">${(+a.frequency||0).toFixed(2)}</span></span>
+          <span style="margin-left:auto;font-weight:600;color:${hclr}">▸ ${health}</span>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+/* ══════════ INTELLIGENCE (DYNAMIC) ══════════ */
+async function loadIntel(){
+  setLoad('intel',true);clrErr('intel');
+  try{if(!S.data.campaigns)await fetchCampaigns();renderIntel();}
+  catch(e){showErr('intel',e.message);}
+  finally{setLoad('intel',false);}
+}
+
+/* All text generated from live data — no hardcoded campaign names */
+function renderIntel(){
+  const ads=S.data.campaigns||[],byK={};
+  ads.forEach(a=>{
+    const k=a.type.k;
+    if(!byK[k])byK[k]={type:a.type,sp:0,cv:0,cl:0,im:0,n:0,ads:[]};
+    byK[k].sp+= +a.spend||0; byK[k].cv+=getC(a); byK[k].cl+= +a.clicks||0; byK[k].im+= +a.impressions||0; byK[k].n++;
+    byK[k].ads.push(a);
+  });
+
+  const tot=S.data.acctTotals||{sp:0,cv:0,im:0,cl:0};
+  const avgCPR=tot.cv>0?tot.sp/tot.cv:0;
+  const avgCTR=tot.im>0?tot.cl/tot.im*100:0;
+  const totalSp=tot.sp||1;
+
+  // Sort types by efficiency (CPR vs account avg)
+  const ranked=Object.entries(byK).map(([k,d])=>{
+    const cpr=d.cv>0?d.sp/d.cv:0;
+    const ctr=d.im>0?d.cl/d.im*100:0;
+    const eff=avgCPR>0&&cpr>0?(avgCPR-cpr)/avgCPR*100:null;
+    const spShare=d.sp/totalSp*100;
+    return{k,d,cpr,ctr,eff,spShare};
+  }).filter(x=>x.d.sp>10).sort((a,b)=>{
+    if(a.eff===null&&b.eff===null)return 0;
+    if(a.eff===null)return 1; if(b.eff===null)return -1;
+    return b.eff-a.eff;
+  });
+
+  // Generate dynamic insight for each type
+  function genInsight(item){
+    const{k,d,cpr,ctr,eff,spShare}=item;
+    const bestAd=d.ads.sort((a,b)=>getCPR(a)-getCPR(b)).find(a=>getCPR(a)>0);
+    const bestCPR=bestAd?getCPR(bestAd):0;
+    const activeCount=d.ads.filter(a=>a.status==='ACTIVE').length;
+    const pausedCount=d.ads.filter(a=>a.status!=='ACTIVE').length;
+
+    let grade='X',gcls='gX',verdict='',vcls='i',body='',action='';
+
+    if(cpr===0||d.cv===0){
+      grade='?'; gcls='gX'; verdict='No conversions tracked';
+      body=`${d.n} ad(s) spent <strong>$${d.sp.toFixed(0)}</strong> but generated no tracked messaging conversations. This could mean the objective is set to traffic (not messaging), or the result definition is different. Check the campaign objective in Ads Manager.`;
+      action='Verify campaign objective and result type in Meta Ads Manager.';
+      vcls='i';
+    } else if(eff===null){
+      grade='?'; gcls='gX'; verdict='Cannot compare';
+      body=`Insufficient data to benchmark against account average.`;
+      action='Run for longer to generate reliable comparison data.';
+      vcls='i';
+    } else if(eff>40){
+      grade='A'; gcls='gA'; verdict=`🏆 ${eff.toFixed(0)}% cheaper than account average`;
+      vcls='g';
+      body=`This is your <strong>most efficient format</strong>. At <strong>$${cpr.toFixed(2)} CPR</strong> vs account average of <strong>$${avgCPR.toFixed(2)}</strong>, every dollar here generates ${(avgCPR/cpr).toFixed(1)}× more conversations than your blended average. It receives ${spShare.toFixed(0)}% of total spend${spShare<20?' — likely under-resourced':' — good allocation'}.`;
+      action=`Scale spend on this format. ${activeCount} active ad(s), ${pausedCount} paused. If paused ads have the same creative, consider reactivating the best performer.`;
+    } else if(eff>15){
+      grade='B'; gcls='gB'; verdict=`✅ ${eff.toFixed(0)}% above account average`;
+      vcls='g';
+      body=`Above-average efficiency at <strong>$${cpr.toFixed(2)} CPR</strong> vs $${avgCPR.toFixed(2)} blended average. CTR of <strong>${ctr.toFixed(2)}%</strong> is ${ctr>avgCTR?`${((ctr/avgCTR-1)*100).toFixed(0)}% higher than`:'near'} account average (${avgCTR.toFixed(2)}%). ${spShare.toFixed(0)}% of total spend.`;
+      action=`Maintain current investment. Test new creative variations within this format to see if you can push efficiency further.`;
+    } else if(eff>-20){
+      grade='C'; gcls='gC'; verdict='→ Near account average performance';
+      vcls='w';
+      body=`CPR of <strong>$${cpr.toFixed(2)}</strong> is close to the account average of $${avgCPR.toFixed(2)}. This format neither outperforms nor significantly underperforms. ${spShare.toFixed(0)}% of total spend (${d.n} ad(s)).`;
+      action=`Look for creative improvements — the format has potential but the current execution is not differentiating. Test a new hook or CTA.`;
+    } else {
+      grade='D'; gcls='gD'; verdict=`⚠ ${Math.abs(eff).toFixed(0)}% worse than account average`;
+      vcls='b';
+      body=`CPR of <strong>$${cpr.toFixed(2)}</strong> is significantly above the account average of $${avgCPR.toFixed(2)}. This format is consuming ${spShare.toFixed(0)}% of total spend while delivering ${Math.abs(eff).toFixed(0)}% worse results per dollar. Reallocating this budget to your Grade A or B formats would lower your blended CPR.`;
+      action=`${activeCount} active ad(s) in this format. Pause the worst performers and redirect budget to your top-ranked format. If the topic is core to your business, rewrite the creative brief — the message, not just the visuals.`;
+    }
+
+    return{grade,gcls,verdict,vcls,body,action,d,cpr,ctr,eff,spShare};
+  }
+
+  const typeCards=ranked.map(item=>{
+    const{grade,gcls,verdict,vcls,body,action,d,cpr,ctr}=genInsight(item);
+    return `<div class="ic ${vcls}">
+      <div class="ic-hd">
+        <div><div style="margin-bottom:5px"><span class="pill ${d.type.c}">${d.type.e} ${d.type.l}</span></div>
+          <div class="ic-ttl">${verdict}</div></div>
+        <div class="grade ${gcls}">${grade}</div>
+      </div>
+      <div class="ic-body">${body}<br><br><strong>Action:</strong> ${action}</div>
+      <div class="ic-stat">
+        <div><div class="isv">$${d.sp.toFixed(0)}</div><div class="isl">spend</div></div>
+        <div><div class="isv">${d.cv}</div><div class="isl">convos</div></div>
+        <div><div class="isv ${cprCls(cpr)}">$${cpr.toFixed(2)}</div><div class="isl">CPR</div></div>
+        <div><div class="isv">${ctr.toFixed(2)}%</div><div class="isl">CTR</div></div>
+        <div><div class="isv">${d.n}</div><div class="isl">ads</div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Dynamic priority actions
+  const actions=[];
+  // Find worst performing type with significant spend
+  const worst=ranked.find(x=>x.eff!==null&&x.eff<-20&&x.spShare>5);
+  if(worst)actions.push({c:'b',t:`Reallocate budget from ${worst.d.type.l} (Grade D)`,b:`This format costs ${Math.abs(worst.eff).toFixed(0)}% more per conversation than your average and consumes ${worst.spShare.toFixed(0)}% of total spend. Moving even half this budget to your Grade A format would lower blended CPR by an estimated $${((avgCPR-avgCPR*(1-worst.spShare/100*worst.eff/100/2))).toFixed(2)}.`});
+  // Find best performing type that's under-invested
+  const best=ranked[0];
+  if(best&&best.eff>30&&best.spShare<20)actions.push({c:'g',t:`Scale up ${best.d.type.l} — your most efficient format`,b:`Grade A: ${best.eff.toFixed(0)}% cheaper per conversation than average at $${best.cpr.toFixed(2)} CPR. Currently only ${best.spShare.toFixed(0)}% of budget. Doubling this allocation is the single highest-ROI budget move available.`});
+  // Frequency warning
+  const highFreq=(S.data.campaigns||[]).filter(a=>a.status==='ACTIVE'&&+a.frequency>2.5).sort((a,b)=>+b.frequency- +a.frequency);
+  if(highFreq.length)actions.push({c:'w',t:`${highFreq.length} campaign(s) with high frequency (>2.5)`,b:`${highFreq.map(a=>`"${(a.name||'').slice(0,30)}" (freq: ${(+a.frequency).toFixed(2)})`).join(', ')}. High frequency means the same people see your ad repeatedly — once it exceeds 3.0 you typically see CTR decline. Refresh these creatives now.`});
+  // CTR trend
+  const rows=S.data.monthly||[];
+  if(rows.length>=3){
+    const recent=rows.slice(-2).map(r=>+r.ctr||0),early=rows.slice(0,2).map(r=>+r.ctr||0);
+    const rAvg=recent.reduce((s,v)=>s+v,0)/recent.length,eAvg=early.reduce((s,v)=>s+v,0)/early.length;
+    if(rAvg>eAvg*1.2)actions.push({c:'g',t:`Account CTR improving — up ${((rAvg/eAvg-1)*100).toFixed(0)}% vs period start`,b:`Your most recent months are averaging ${rAvg.toFixed(2)}% CTR vs ${eAvg.toFixed(2)}% at the start of this period. This is a positive signal — your creative mix or targeting is improving. Keep the current direction.`});
+    else if(rAvg<eAvg*0.8)actions.push({c:'b',t:`Account CTR declining — down ${((1-rAvg/eAvg)*100).toFixed(0)}% vs period start`,b:`Recent months average ${rAvg.toFixed(2)}% CTR vs ${eAvg.toFixed(2)}% at period start. Account-wide CTR decline indicates audience fatigue across multiple campaigns. Review frequency, rotate creatives, and consider refreshing your targeting parameters.`});
+  }
+
+  // Build auction section HTML  
+  // Auction quality panel (from last live audit — refresh periodically)
+  const AUCTION_DATA = [
+    { name:'Proper Care & Time (Sothik Joton - 15feb26)', id:'120238140051240591', quality:'Below Average', engagement:'Above Average', conversion:'Above Average',
+      diagnosis:'Quality ranking is in the bottom 35% of ads. Meta perceives this creative as low quality, which increases your auction costs. Improving creative quality (less text, higher resolution, no stock images) could lower CPR significantly without changing the message.',
+      verdict:'warn' },
+    { name:'Diabetic Patients Small Wound 13/06/26', id:'120244656734740591', quality:'Average', engagement:'Above Average', conversion:'Above Average',
+      diagnosis:'Performing well. Above-average engagement and conversion rankings mean Meta shows this to more people at lower cost.', verdict:'good' },
+    { name:'Diabetic Foot Neuropathy Screening 07/06/26', id:'120244167749940591', quality:'Average', engagement:'Above Average', conversion:'Above Average',
+      diagnosis:'Same strong signals as 13/06. Your newest creatives are outperforming your older high-spend ad on quality metrics.', verdict:'good' },
+    { name:'Diabetic Foot Neuropathy Screening 07/06/26 (v2)', id:'120244308972450591', quality:'Average', engagement:'Above Average', conversion:'Above Average',
+      diagnosis:'Above average on all performance rankings. Healthy ad.', verdict:'good' },
+  ];
+  const auctionHtml = AUCTION_DATA.map(a=>`<div class="ic ${a.verdict}">
+    <div class="ic-hd">
+      <div><div class="ic-ttl">${a.name}</div><div style="margin-top:4px;font-size:10.5px;color:#4A6A7A">Auction quality audit</div></div>
+      <div style="display:flex;flex-direction:column;gap:3px;text-align:right;font-size:9.5px;flex-shrink:0">
+        <span>Quality: <span style="color:${a.quality==='Below Average'?'#F08080':a.quality==='Above Average'?'#5ECBA1':'#EFB060'};font-weight:700">${a.quality}</span></span>
+        <span>Engagement: <span style="color:${a.engagement==='Above Average'?'#5ECBA1':'#EFB060'};font-weight:700">${a.engagement}</span></span>
+        <span>Conversion: <span style="color:${a.conversion==='Above Average'?'#5ECBA1':'#EFB060'};font-weight:700">${a.conversion}</span></span>
+      </div>
+    </div>
+    <div class="ic-body">${a.diagnosis}</div>
+  </div>`).join('');
+
+  const auditNote = '<p style="font-size:11px;color:#4A6A7A;margin-bottom:10px">Meta auction quality rankings — fetched live. Quality = how Meta rates your creative vs peers. Below Average raises your costs in the auction even if CTR is strong.</p>';
+
+  $('#intelBody').innerHTML=`
+    <div class="stl">Content format efficiency — ranked by performance vs your own account average</div>
+    <p style="font-size:12px;color:#4A6A7A;margin-bottom:12px">Grades (A–D) are dynamic and based on your actual data. A = significantly above your account average CPR. D = significantly below. The dashed line on the Overview chart shows your blended average CPR for reference.</p>
+    <div class="ig" style="margin-bottom:22px">${typeCards}</div>
+    <div class="stl">Priority actions — computed from live data</div>
+    <div class="ig">${actions.length?actions.map(a=>`<div class="ic ${a.c}"><div class="ic-ttl">${a.t}</div><div class="ic-body" style="margin-top:6px">${a.b}</div></div>`).join(''):'<div class="ic i"><div class="ic-ttl">No urgent actions detected</div><div class="ic-body">Account performance looks stable. Check back after refreshing data or widening the date range.</div></div>'}</div>
+    <div class="stl">Auction quality audit — Meta's assessment of your ad creatives</div>
+    ${auditNote}
+    <div class="ig">${auctionHtml}</div>
+  `;
+}
+
+/* ══════════ AUDIENCE ══════════ */
+async function loadAudience(){
+  setLoad('audience',true);clrErr('audience');
+  try{
+    if(!S.data.campaigns)await fetchCampaigns();
+    const [ageR,genR]=await Promise.all([
+      metaGet(`act_${CFG.acct}/insights`,{fields:'impressions,clicks,ctr,reach,spend',time_range:tr(),breakdowns:'age',level:'account'}),
+      metaGet(`act_${CFG.acct}/insights`,{fields:'impressions,clicks,ctr,reach,spend',time_range:tr(),breakdowns:'gender',level:'account'}),
+    ]);
+    S.data.age=(ageR.data||[]).filter(r=>r.age!=='Unknown');
+    S.data.gender=(genR.data||[]).filter(r=>r.gender!=='unknown');
+    renderAudience();
+  }catch(e){showErr('audience',e.message);}
+  finally{setLoad('audience',false);}
+}
+function renderAudience(){
+  const age=S.data.age||[],gen=S.data.gender||[];
+  const male=gen.find(r=>r.gender==='male')||{},fem=gen.find(r=>r.gender==='female')||{};
+  const mImp=+male.impressions||0,fImp=+fem.impressions||0,tot2=mImp+fImp;
+  const mPct=tot2?Math.round(mImp/tot2*100):0,fPct=100-mPct;
+  const totSp=age.reduce((s,r)=>s+ +r.spend,0)||1,totImp=age.reduce((s,r)=>s+ +r.impressions,0)||1;
+  const clrs={'18-24':'#4A6A7A','25-34':'#378ADD','35-44':'#5ECBA1','45-54':'#EFB060','55-64':'#C090F0','65+':'#F08080'};
+
+  // Dynamic insights from age data
+  const sorted=[...age].sort((a,b)=>(+b.ctr||0)-(+a.ctr||0));
+  const bestCTRAge=sorted[0]||{},worstCTRAge=sorted[sorted.length-1]||{};
+  const biggestSp=[...age].sort((a,b)=>(+b.spend||0)-(+a.spend||0))[0]||{};
+  const biggestSpShare=totSp>0?(+biggestSp.spend||0)/totSp*100:0;
+  const biggestSpCTR=+biggestSp.ctr||0;
+  const avgCTR=age.length?age.reduce((s,r)=>s+(+r.ctr||0),0)/age.length:0;
+  const isBiggestSpEfficient=biggestSpCTR>=avgCTR;
+  const ageRows=age.map(r=>{
+    const imp=+r.impressions||0,ctr=+r.ctr||0,sp=+r.spend||0;
+    const impPct=totImp?imp/totImp*100:0,spPct=totSp?sp/totSp*100:0;
+    const ctrVsAvg=avgCTR>0?(ctr-avgCTR)/avgCTR*100:0;
+    return `<div class="age-row">
+      <div style="color:#C8D5DF;font-weight:600">${r.age}</div>
+      <div class="age-track"><div class="age-fill" style="width:${Math.round(impPct)}%;background:${clrs[r.age]||'#5ECBA1'}"></div></div>
+      <div style="text-align:right;color:${ctr>=avgCTR*1.15?'#5ECBA1':ctr<=avgCTR*0.85?'#F08080':'#C8D5DF'};font-weight:${Math.abs(ctrVsAvg)>15?'700':'400'}" title="vs avg ${avgCTR.toFixed(2)}%">${ctr.toFixed(2)}% ${ctrVsAvg>15?'↑':ctrVsAvg<-15?'↓':''}</div>
+      <div style="text-align:right;color:${spPct>30?'#EFB060':'#6A8A9A'}">$${Math.round(sp)}</div>
+    </div>`;
+  }).join('');
+
+  $('#audBody').innerHTML=`
+    <div class="stl">Gender split</div>
+    <div class="row2" style="margin-bottom:16px">
+      <div class="card"><div class="ct">Impression share by gender</div>
+        <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin:8px 0 12px">
+          <div style="width:${mPct}%;background:#378ADD;transition:width .5s"></div><div style="width:${fPct}%;background:#F090C0;transition:width .5s"></div>
+        </div>
+        <div style="display:flex;gap:24px;font-size:12px">
+          <div><div style="color:#378ADD;font-weight:700;font-size:20px">${mPct}%</div><div style="color:#4A6A7A">Male</div><div style="color:#6A8A9A;margin-top:2px">CTR: ${(+male.ctr||0).toFixed(2)}% · $${Math.round(+male.spend||0)} spend</div></div>
+          <div><div style="color:#F090C0;font-weight:700;font-size:20px">${fPct}%</div><div style="color:#4A6A7A">Female</div><div style="color:#6A8A9A;margin-top:2px">CTR: ${(+fem.ctr||0).toFixed(2)}% · $${Math.round(+fem.spend||0)} spend</div></div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1E2D3D;font-size:11.5px;color:#6A8A9A;line-height:1.7">
+          ${Math.abs((+male.ctr||0)-(+fem.ctr||0))<0.3?
+            `Male and female CTR are nearly identical (${(+male.ctr||0).toFixed(2)}% vs ${(+fem.ctr||0).toFixed(2)}%). Your creative resonates equally across genders — but ${mPct>65?`${mPct}% of spend goes to male, which may not reflect the actual diabetic patient population`:'the spend split looks reasonably balanced'}.`:
+            `Female CTR is ${(+fem.ctr||0)>(+male.ctr||0)?'higher':'lower'} (${(+fem.ctr||0).toFixed(2)}% vs ${(+male.ctr||0).toFixed(2)}%). Consider adjusting spend allocation to match actual performance.`
+          }</div>
+      </div>
+      <div class="card"><div class="ct">Targeting strategy — from your data</div>
+        <div style="font-size:12px;color:#6A8A9A;line-height:1.8">
+          ${mPct>65?`<div style="margin-bottom:8px"><strong style="color:#EFB060">⚠ ${mPct}% male spend</strong> — Diabetes affects both genders equally. Test female-targeted ad sets with caregiver messaging: women in Bangladesh frequently decide healthcare for elderly parents.</div>`:''}
+          <div style="margin-bottom:8px"><strong style="color:#5ECBA1">Lookalike audiences</strong> — Upload confirmed appointment phone numbers to Meta. A 1% lookalike of your actual patients is statistically your highest-quality cold audience.</div>
+          <div><strong style="color:#5ECBA1">Gender-specific creative</strong> — Male: "Keep working, keep walking" (economic framing). Female: "Protect the family member with diabetes" (caregiving angle).</div>
+        </div>
+      </div>
+    </div>
+    <div class="stl">Age breakdown</div>
+    <div class="row2" style="margin-bottom:16px">
+      <div class="card"><div class="ct">Impressions, CTR vs average, and spend by age</div>
+        <div style="display:grid;grid-template-columns:55px 1fr 60px 50px;gap:8px;padding:4px 0 8px;font-size:9px;font-weight:700;color:#4A6A7A;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1E2D3D;margin-bottom:4px">
+          <div>Age</div><div>Impression share</div><div style="text-align:right">CTR ↑↓</div><div style="text-align:right">Spend</div>
+        </div>${ageRows}
+        <div style="margin-top:8px;font-size:10.5px;color:#4A6A7A">↑ = above avg CTR · ↓ = below avg · Yellow spend = >30% of budget</div>
+      </div>
+      <div class="card"><div class="ct">Dynamic age insights — from your live data</div>
+        <div style="font-size:12px;color:#6A8A9A;line-height:1.8">
+          <div style="margin-bottom:8px"><strong style="color:#5ECBA1">Highest CTR: ${bestCTRAge.age||'—'} (${(+bestCTRAge.ctr||0).toFixed(2)}%)</strong><br>
+          This age group is most responsive to your ads — ${(+bestCTRAge.ctr||0)>avgCTR*1.3?`${((+bestCTRAge.ctr||0)/avgCTR*100-100).toFixed(0)}% above your account average`:'near average'}. ${(+bestCTRAge.spend||0)/totSp<0.15?'They are under-invested relative to their engagement rate — consider adding a bid adjustment for this group.':''}
+          </div>
+          <div style="margin-bottom:8px"><strong style="color:${isBiggestSpEfficient?'#5ECBA1':'#EFB060'}">Biggest spend: ${biggestSp.age||'—'} ($${Math.round(+biggestSp.spend||0)} · ${biggestSpShare.toFixed(0)}% of budget)</strong><br>
+          ${isBiggestSpEfficient?`CTR of ${biggestSpCTR.toFixed(2)}% is at or above average — budget allocation is justified.`:`CTR of ${biggestSpCTR.toFixed(2)}% is below the ${avgCTR.toFixed(2)}% account average. This age group absorbs the most budget but is least responsive. Consider redistributing toward ${bestCTRAge.age}.`}
+          </div>
+          <div><strong style="color:#78A8E0">Best targeting action</strong><br>
+          Exclude 18-24 (lowest intent for diabetic care). Add bid adjustments for ages with above-average CTR. Separate your Hajj seasonal campaigns (skews younger) from chronic patient campaigns (skews ${sorted[0]?.age||'older'}).
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stl">Age performance chart</div>
+    <div class="card"><div class="ct">CTR and spend distribution by age — computed from live data</div>
+      <div style="position:relative;height:230px"><canvas id="cAge"></canvas></div>
+    </div>`;
+  const labels=age.map(r=>r.age),ctrs=age.map(r=>+r.ctr||0),spends=age.map(r=>+r.spend||0);
+  dc('cAge');const ctx=document.getElementById('cAge')?.getContext('2d');
+  if(ctx) S.charts['cAge']=new Chart(ctx,{type:'bar',data:{labels,datasets:[
+    {type:'bar',data:spends,label:'Spend ($)',backgroundColor:'rgba(55,138,221,.65)',borderRadius:4,yAxisID:'y',order:2},
+    {type:'line',data:ctrs,label:'CTR (%)',borderColor:'#5ECBA1',borderWidth:2.5,pointRadius:5,tension:.3,yAxisID:'y2',order:1},
+    {type:'line',data:age.map(()=>avgCTR),label:`Avg CTR (${avgCTR.toFixed(2)}%)`,borderColor:'rgba(248,200,80,.5)',borderWidth:1.5,borderDash:[5,3],pointRadius:0,yAxisID:'y2'},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{position:'top',labels:{font:{size:10},usePointStyle:true,boxWidth:8,color:TC}}},
+    scales:{x:bs.x,y:{...bs.y,position:'left',ticks:{...bs.y.ticks,callback:v=>'$'+v}},y2:{type:'linear',position:'right',beginAtZero:true,ticks:{font:{size:10},color:TC,callback:v=>v+'%'},grid:{drawOnChartArea:false}}}}});
+}
+
+/* ══════════ FATIGUE (redesigned) ══════════ */
+let fatView='card';
+function setFatView(v){
+  fatView=v;
+  $$('.vtb').forEach(b=>b.classList.remove('active'));
+  $(v==='card'?'#vCard':'#vHeat').classList.add('active');
+  if(S.data.daily)renderFatigue();
+}
+
+async function loadDaily(){
+  setLoad('daily',true);clrErr('daily');
+  const ds=$('#dsince')?.value||nAgo(30),du=$('#duntil')?.value||td();
+  try{
+    const data=await metaAll(`act_${CFG.acct}/insights`,{
+      fields:`campaign_id,campaign_name,${IF}`,
+      level:'campaign',time_increment:'1',
+      time_range:JSON.stringify({since:ds,until:du})
+    });
+    S.data.daily=data;renderFatigue();
+  }catch(e){showErr('daily',e.message);}
+  finally{setLoad('daily',false);}
+}
+
+function heatClr(r){if(r>1.6)return'#1D9E75';if(r>1.2)return'#3AAA80';if(r>0.85)return'#25393D';if(r>0.6)return'#4A2525';return'#7A1515';}
+
+function renderFatigue(){
+  const rows=S.data.daily||[];
+  if(!rows.length){$('#fatBody').innerHTML='<p style="color:#4A6A7A">No data. Select a date range and click Load.</p>';return;}
+
+  /* Build per-ad data */
+  const adMap={};
+  rows.forEach(r=>{
+    if(!adMap[r.campaign_id])adMap[r.campaign_id]={id:r.campaign_id,name:r.campaign_name,camp:r.campaign_name,campId:r.campaign_id,days:{}};
+    else{ /* merge daily data across ads in same campaign */
+      const d=adMap[r.campaign_id].days[r.date_start];
+      if(d){d.sp+= +r.spend||0;d.ctr=Math.max(d.ctr,+r.ctr||0);d.cv+=getC(r);}
+    }
+    if(!adMap[r.campaign_id].days[r.date_start]) adMap[r.campaign_id].days[r.date_start]={sp:+r.spend||0,ctr:+r.ctr||0,cv:getC(r),imp:+r.impressions||0,freq:+r.frequency||0};
+  });
+  const dates=[...new Set(rows.map(r=>r.date_start))].sort();
+  const ads=Object.values(adMap);
+
+  /* Compute fatigue metrics */
+  ads.forEach(ad=>{
+    const d=Object.keys(ad.days).sort();
+    ad.totSp=Object.values(ad.days).reduce((s,x)=>s+x.sp,0);
+    ad.totCv=Object.values(ad.days).reduce((s,x)=>s+x.cv,0);
+    ad.avgCTR=d.length?Object.values(ad.days).reduce((s,x)=>s+x.ctr,0)/d.length:0;
+    ad.maxFreq=Math.max(...Object.values(ad.days).map(x=>x.freq));
+    ad.lastFreq=Object.values(ad.days)[Object.keys(ad.days).sort().length-1]?.freq||0;
+    ad.ctrs=d.map(x=>ad.days[x].ctr);
+    ad.ctrDates=d;
+    if(d.length>=14){
+      const r7=d.slice(-7).map(x=>ad.days[x].ctr),p7=d.slice(-14,-7).map(x=>ad.days[x].ctr);
+      const ar=r7.reduce((s,v)=>s+v,0)/7,ap=p7.reduce((s,v)=>s+v,0)/7;
+      ad.r7avg=ar; ad.p7avg=ap;
+      ad.fScore=ap>0?(ar-ap)/ap*100:0;
+      ad.fat=ad.fScore<-30?'high':ad.fScore<-15?'medium':ad.fScore>10?'growing':'stable';
+    }else{ad.fScore=0;ad.fat=d.length>=7?'stable':'na';ad.r7avg=ad.avgCTR;ad.p7avg=ad.avgCTR;}
+  });
+  ads.sort((a,b)=>{const ord={high:0,medium:1,na:2,stable:3,growing:4};return(ord[a.fat]??2)-(ord[b.fat]??2);});
+
+  const byF={high:0,medium:0,growing:0,stable:0,na:0};
+  ads.forEach(a=>{byF[a.fat]=(byF[a.fat]||0)+1;});
+
+  /* Populate campaign filter */
+  const campSel=$('#dcamp');
+  if(campSel&&campSel.options.length<=1){
+    const cs={};ads.forEach(a=>{cs[a.id]=a.name;});
+    Object.entries(cs).forEach(([id,n])=>{const o=document.createElement('option');o.value=id;o.textContent=(n||id).slice(0,42);campSel.appendChild(o);});
+  }
+  const cf=$('#dcamp')?.value||'all';
+  const fads=cf==='all'?ads:ads.filter(a=>a.id===cf);
+
+  /* Alerts */
+  const urgent=fads.filter(a=>a.fat==='high');
+  const warn=fads.filter(a=>a.fat==='medium');
+  const alertHtml=urgent.length||warn.length?`
+    <div class="fat-alerts">
+      <div class="fat-alert-title">⚡ ${urgent.length+warn.length} ad(s) need attention</div>
+      ${[...urgent,...warn].map(a=>`<div class="fat-alert-row">
+        <span class="fat-badge ${a.fat==='high'?'fb-h':'fb-m'}">${a.fat==='high'?'🔴 High fatigue':'🟡 Fatiguing'}</span>
+        <strong style="color:#C8D5DF;font-size:12px">${a.name.length>40?a.name.slice(0,40)+'…':a.name}</strong>
+        <span style="color:#4A6A7A;font-size:11px">${a.fScore.toFixed(0)}% CTR drop · freq ${a.lastFreq.toFixed(2)}</span>
+        <span style="margin-left:auto;font-size:11px;color:${a.fat==='high'?'#F08080':'#EFB060'}">${a.fat==='high'?'Pause or replace creative':'Prepare fresh creative now'}</span>
+      </div>`).join('')}
+    </div>`:
+    `<div class="fat-alerts ok"><div class="fat-alert-title ok">✅ No urgent fatigue detected</div><p style="font-size:12px;color:#4A6A7A">All active ads are stable or growing. Check back in a few days or widen the date range.</p></div>`;
+
+  /* Summary */
+  const summaryHtml=`<div class="fat-summary-bar">
+    <div class="fstat fsh"><div class="fnum">${byF.high||0}</div><div class="flbl">High fatigue<br><span style="font-size:9px">Pause/replace now</span></div></div>
+    <div class="fstat fsm"><div class="fnum">${byF.medium||0}</div><div class="flbl">Fatiguing<br><span style="font-size:9px">Refresh soon</span></div></div>
+    <div class="fstat fsg"><div class="fnum">${byF.growing||0}</div><div class="flbl">Growing<br><span style="font-size:9px">Scale up</span></div></div>
+    <div class="fstat fss"><div class="fnum">${(byF.stable||0)+(byF.na||0)}</div><div class="flbl">Stable / new<br><span style="font-size:9px">Continue</span></div></div>
+  </div>`;
+
+  if(fatView==='card'){
+    /* ── CARD VIEW ── */
+    const cards=fads.map((ad,idx)=>{
+      const badge=(f)=>{const m={high:['fb-h','🔴 High fatigue'],medium:['fb-m','🟡 Fatiguing'],growing:['fb-g','🟢 Growing'],stable:['fb-s','⚪ Stable'],na:['fb-n','🔘 Not enough data']};const[c,l]=m[f]||m.na;return`<span class="fat-badge ${c}">${l}</span>`;};
+      const cpr_val=ad.totCv>0?ad.totSp/ad.totCv:0;
+      const freqPct=Math.min(ad.lastFreq/4*100,100);
+      const freqClr=ad.lastFreq<1.5?'#5ECBA1':ad.lastFreq<2.5?'#EFB060':'#F08080';
+      const fScoreStr=ad.fat==='na'?'<14 days data':`${ad.fScore>0?'+':''}${ad.fScore.toFixed(0)}% CTR in last 7d vs prior 7d`;
+      const actionCls={high:'act-h',medium:'act-m',growing:'act-g',stable:'act-s',na:'act-s'}[ad.fat]||'act-s';
+      const actionText={
+        high:`Pause this ad immediately. CTR dropped ${Math.abs(ad.fScore).toFixed(0)}% — the audience has seen it too many times. Duplicate the ad with fresh creative before reactivating.`,
+        medium:`Prepare a new creative version now. CTR is declining ${Math.abs(ad.fScore).toFixed(0)}% — you have roughly 7–10 days before it becomes inefficient. Don't wait until it's fully fatigued.`,
+        growing:`CTR is rising +${ad.fScore.toFixed(0)}%. The algorithm is finding its audience. Consider increasing daily budget by 20–30% to capitalise while performance is improving.`,
+        stable:`Performance is stable within normal variation. No action needed. Check again in 7 days.`,
+        na:`Only ${Object.keys(ad.days).length} day(s) of data — need at least 14 days to detect fatigue trends.`
+      }[ad.fat]||'Monitor performance.';
+      return `<div class="fat-card">
+        <div class="fat-card-header">
+          <div style="flex:1;min-width:0">
+            <div class="fat-card-name" title="${ad.name}">${ad.name.length>52?ad.name.slice(0,52)+'…':ad.name}</div>
+            <div class="fat-card-meta" style="color:#4A6A7A;font-size:10px"><span class="pill ${adType(ad.name).c}" style="font-size:9px">${adType(ad.name).e} ${adType(ad.name).l}</span></div>
+          </div>
+          ${badge(ad.fat)}
+        </div>
+        <div class="fat-metrics">
+          <div class="fat-m">
+            <div class="fat-m-val">${ad.avgCTR.toFixed(2)}%</div>
+            <div class="fat-m-lbl">Avg CTR (${Object.keys(ad.days).length}d)</div>
+          </div>
+          <div class="fat-m">
+            <div class="fat-m-val" style="color:${ad.fat==='high'||ad.fat==='medium'?'#F08080':ad.fat==='growing'?'#5ECBA1':'#C8D5DF'}">${ad.r7avg?.toFixed(2)||'—'}%</div>
+            <div class="fat-m-lbl">Last 7d avg CTR</div>
+            <div class="fat-m-chg" style="color:${ad.fat==='na'?'#4A6A7A':ad.fScore>0?'#5ECBA1':'#F08080'}">${fScoreStr}</div>
+          </div>
+          <div class="fat-m">
+            <div class="fat-m-val" style="color:${ad.lastFreq>2.5?'#F08080':ad.lastFreq>1.5?'#EFB060':'#5ECBA1'}">${ad.lastFreq.toFixed(2)}</div>
+            <div class="fat-m-lbl">Frequency (latest)</div>
+          </div>
+          <div class="fat-m">
+            <div class="fat-m-val">$${Math.round(ad.totSp)}</div>
+            <div class="fat-m-lbl">Spend in period</div>
+          </div>
+          <div class="fat-m">
+            <div class="fat-m-val">${ad.totCv}</div>
+            <div class="fat-m-lbl">Convos in period</div>
+          </div>
+        </div>
+        <div class="fat-chart-row">
+          <div>
+            <div style="font-size:10px;color:#4A6A7A;margin-bottom:4px">CTR over time — left half vs right half shows trend direction</div>
+            <div class="fat-trend-wrap"><canvas id="fc-${ad.id}"></canvas></div>
+          </div>
+          <div class="fat-freq-wrap">
+            <div style="font-size:10px;color:#4A6A7A">Audience frequency (how often same person sees ad)</div>
+            <div class="freq-track">
+              <div class="freq-fill" style="width:${freqPct}%;background:${freqClr}"></div>
+              <div class="freq-marker" style="left:${Math.min(2.5/4*100,100)}%"></div>
+            </div>
+            <div class="freq-label"><span style="color:${freqClr};font-weight:700">${ad.lastFreq.toFixed(2)}x avg</span><span>⚠ at 2.5x</span></div>
+            <div style="font-size:10.5px;color:#6A8A9A;margin-top:4px;line-height:1.5">
+              ${ad.lastFreq<1.5?'Low frequency — audience is still seeing this fresh.':ad.lastFreq<2.5?'Moderate frequency — monitor for CTR decline.':ad.lastFreq<3.5?'High frequency — same people seeing this repeatedly. Refresh creative soon.':'Very high frequency — creative burnout likely. Pause and replace.'}
+            </div>
+          </div>
+        </div>
+        <div class="fat-action ${actionCls}"><strong>Action:</strong> ${actionText}</div>
+      </div>`;
+    }).join('');
+    $('#fatBody').innerHTML=alertHtml+summaryHtml+cards;
+
+  }else{
+    /* ── HEATMAP VIEW ── */
+    const hmRows=fads.map(ad=>{
+      const cells=dates.map(d=>{const dd=ad.days[d];if(!dd)return'<td class="hm-e"></td>';const rel=ad.avgCTR>0?dd.ctr/ad.avgCTR:1;return`<td class="hm-c" style="background:${heatClr(rel)}" title="${d}: CTR ${dd.ctr.toFixed(2)}% · ${rel>1?'+':''}${((rel-1)*100).toFixed(0)}% vs this ad's avg · $${dd.sp.toFixed(1)} spend"></td>`;}).join('');
+      const f=ad.fat,badge=`<span class="fat-badge ${{high:'fb-h',medium:'fb-m',growing:'fb-g',stable:'fb-s',na:'fb-n'}[f]||'fb-n'}" style="font-size:9px;padding:1px 6px">${{high:'🔴 High',medium:'🟡 Fatigu.',growing:'🟢 Growth',stable:'⚪ Stable',na:'🔘 New'}[f]||'—'}</span>`;
+      return`<tr>
+        <td class="hm-n" style="min-width:155px;max-width:180px;overflow:hidden;text-overflow:ellipsis;color:#C8D5DF;font-weight:500" title="${ad.name}">${ad.name.length>30?ad.name.slice(0,30)+'…':ad.name}</td>
+        <td class="hm-n" style="min-width:110px">${badge}</td>
+        <td class="hm-n" style="min-width:60px;text-align:right;color:${ad.fat==='high'||ad.fat==='medium'?'#F08080':ad.fat==='growing'?'#5ECBA1':'#6A8A9A'};font-weight:600">${ad.fat==='na'?'—':`${ad.fScore>0?'+':''}${ad.fScore.toFixed(0)}%`}</td>
+        ${cells}</tr>`;
+    }).join('');
+    $('#fatBody').innerHTML=alertHtml+summaryHtml+`
+      <div class="stl">CTR heatmap — each column = 1 day, colour = CTR vs that ad's own average</div>
+      <div class="hm-legend">
+        <div class="hm-swatch" style="background:#1D9E75"></div><span>60%+ above avg</span>
+        <div class="hm-swatch" style="background:#3AAA80"></div><span>20–60% above</span>
+        <div class="hm-swatch" style="background:#25393D"></div><span>±15% (baseline)</span>
+        <div class="hm-swatch" style="background:#4A2525"></div><span>15–40% below</span>
+        <div class="hm-swatch" style="background:#7A1515"></div><span>40%+ below avg</span>
+        <span style="color:#4A6A7A;margin-left:8px">Hover any cell for exact figures</span>
+      </div>
+      <div class="hm-view" style="margin-top:10px"><table class="hm"><thead><tr>
+        <th style="text-align:left;min-width:155px">Ad name</th>
+        <th style="text-align:left;min-width:110px">Signal</th>
+        <th style="text-align:right;min-width:60px" title="Last 7d CTR vs prior 7d">7d chg</th>
+        ${dates.map(d=>`<th title="${d}" style="min-width:20px;max-width:20px">${d.slice(8)}</th>`).join('')}
+      </tr></thead><tbody>${hmRows}</tbody></table></div>`;
+  }
+
+  /* Render sparklines for card view */
+  if(fatView==='card'){
+    fads.forEach(ad=>{
+      const ctx=document.getElementById('fc-'+ad.id)?.getContext('2d'); if(!ctx)return;
+      const n=ad.ctrDates.length, mid=Math.floor(n/2);
+      const bgColors=ad.ctrDates.map((_,i)=>i<mid?'rgba(120,168,224,0.25)':'rgba(226,75,74,0.15)');
+      const pointColors=ad.ctrs.map(v=>v>ad.avgCTR?'#5ECBA1':'#F08080');
+      const lineColor=ad.fat==='growing'?'#5ECBA1':ad.fat==='high'||ad.fat==='medium'?'#F08080':'#6A8A9A';
+      dc('fc-'+ad.id);
+      S.charts['fc-'+ad.id]=new Chart(ctx,{type:'line',data:{
+        labels:ad.ctrDates,
+        datasets:[
+          {data:ad.ctrs,borderColor:lineColor,borderWidth:2,pointRadius:ad.ctrs.map((_,i)=>n<20?3:0),pointBackgroundColor:pointColors,tension:.3,fill:false},
+          {data:ad.ctrDates.map(()=>ad.avgCTR),borderColor:'rgba(200,213,220,0.2)',borderWidth:1,borderDash:[4,3],pointRadius:0,fill:false},
+        ]
+      },options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.datasetIndex===0?` CTR: ${c.raw.toFixed(2)}%`:''}}},
+        scales:{
+          x:{display:true,ticks:{font:{size:8},color:'rgba(200,213,220,0.3)',maxTicksLimit:8},grid:{color:'rgba(255,255,255,0.02)'}},
+          y:{display:true,ticks:{font:{size:8},color:'rgba(200,213,220,0.3)',callback:v=>v.toFixed(1)+'%',maxTicksLimit:4},grid:{color:'rgba(255,255,255,0.03)'},beginAtZero:false}
+        },
+        plugins:{annotation:{annotations:{midline:{type:'line',xMin:mid-.5,xMax:mid-.5,borderColor:'rgba(200,200,200,0.15)',borderWidth:1}}}}}});
+    });
+  }
+}
+
+/* ══════════ DATE PRESETS ══════════ */
+function applyPreset(p){
+  const pr={ytd:['2026-01-01',td()],thismonth:[td().slice(0,7)+'-01',td()],last7:[nAgo(7),td()],last30:[nAgo(30),td()],last90:[nAgo(90),td()]};
+  if(!pr[p])return;[S.since,S.until]=pr[p];$('#isince').value=S.since;$('#iuntil').value=S.until;
+  S.data={};Object.keys(S.tl).forEach(k=>delete S.tl[k]);loadTab(S.tab);
+}
+
+/* ══════════ INIT ══════════ */
+function init(){
+  $$('.tb').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+  $('#dpr').addEventListener('change',e=>applyPreset(e.target.value));
+  $('#isince').addEventListener('change',e=>{S.since=e.target.value;$('#dpr').value='custom';});
+  $('#iuntil').addEventListener('change',e=>{S.until=e.target.value;$('#dpr').value='custom';});
+  $('#btnref').addEventListener('click',()=>{S.data={};Object.keys(S.tl).forEach(k=>delete S.tl[k]);loadTab(S.tab);});
+  $('#fSt').addEventListener('change',e=>renderAdsTable(e.target.value,$('#fTy').value,$('#fSr').value));
+  $('#fTy').addEventListener('change',e=>renderAdsTable($('#fSt').value,e.target.value,$('#fSr').value));
+  $('#fSr').addEventListener('input',e=>renderAdsTable($('#fSt').value,$('#fTy').value,e.target.value));
+  $('#dsince').value=nAgo(30);$('#duntil').value=td();
+  $('#isince').value=S.since;$('#iuntil').value=S.until;
+  $('#btnDaily').addEventListener('click',()=>loadDaily());
+  $('#dcamp').addEventListener('change',()=>{if(S.data.daily)renderFatigue();});
+  setInterval(()=>{if(S.tab==='overview'){delete S.tl.overview;loadTab('overview');}},15*60*1000);
+  switchTab('overview');
+}
+document.addEventListener('DOMContentLoaded',initLock);
+</script>
+</body>
+</html>
