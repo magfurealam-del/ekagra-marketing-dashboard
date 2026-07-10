@@ -1,58 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, type EkagraSession, serializeSession, readSession } from "@/lib/session";
-
-// Internal tool — a plain JSON blob in an httpOnly cookie is sufficient (no
-// external users, no cross-tenant risk). Tokens never touch client-side JS
-// after this route sets the cookie: the GET handler below only ever reports
-// booleans, never the token values themselves.
+import {
+  SESSION_COOKIE,
+  getCredentialStatus,
+  hasSitePasswordConfigured,
+  hasValidSiteSession,
+  serializeSiteSession,
+  verifySitePassword,
+} from "@/lib/session";
 
 export async function POST(req: NextRequest) {
-  let body: Partial<EkagraSession>;
+  let body: { password?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const adToken = (body.adToken || "").trim();
-  const adAccountId = (body.adAccountId || "").trim().replace(/^act_/, "");
-  const pageId = (body.pageId || "").trim();
-  const pageToken = (body.pageToken || "").trim();
-
-  if (!adToken || !adAccountId) {
+  if (!hasSitePasswordConfigured()) {
     return NextResponse.json(
-      { error: "Meta Ads access token and Ad Account ID are required." },
-      { status: 400 }
+      { error: "SITE_PASSWORD is not configured on the server." },
+      { status: 500 }
     );
   }
 
-  const session: EkagraSession = { adToken, adAccountId, pageId, pageToken };
+  if (!verifySitePassword((body.password || "").trim())) {
+    return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
+  }
 
-  const res = NextResponse.json({ connected: true, hasPage: Boolean(pageId && pageToken) });
-  res.cookies.set(SESSION_COOKIE, serializeSession(session), {
+  const credentials = getCredentialStatus();
+  const res = NextResponse.json({
+    connected: credentials.hasAds,
+    authenticated: true,
+    ...credentials,
+  });
+  res.cookies.set(SESSION_COOKIE, serializeSiteSession(), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 30,
   });
   return res;
 }
 
-// Only ever reports whether a session exists — never returns token values to the client.
 export async function GET() {
-  const session = readSession();
-  if (!session) return NextResponse.json({ connected: false, hasPage: false });
+  const credentials = getCredentialStatus();
+  const authenticated = hasValidSiteSession();
   return NextResponse.json({
-    connected: true,
-    hasPage: Boolean(session.pageId && session.pageToken),
-    adAccountId: session.adAccountId,
-    pageId: session.pageId,
+    connected: authenticated && credentials.hasAds,
+    authenticated,
+    ...credentials,
   });
 }
 
 export async function DELETE() {
-  const res = NextResponse.json({ connected: false });
+  const res = NextResponse.json({ connected: false, authenticated: false });
   res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
   return res;
 }

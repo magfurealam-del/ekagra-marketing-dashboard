@@ -11,7 +11,10 @@ const GRAPH = "https://graph.facebook.com/v20.0";
 export async function GET(req: NextRequest) {
   const session = readSession();
   if (!session) {
-    return NextResponse.json({ error: "Connect your Meta credentials" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unlock the dashboard and configure Meta credentials on the server." },
+      { status: 401 }
+    );
   }
 
   const { searchParams } = new URL(req.url);

@@ -1,25 +1,7 @@
-# Ekagra Health — Marketing Intelligence
+# Ekagra Health - Marketing Intelligence
 
-A Next.js 14 (App Router, TypeScript) dashboard for Ekagra Health's marketing
-team, combining Meta Ads performance with organic Facebook Page insights in
-one internal tool. This replaces the previous single-file HTML/vanilla-JS
-dashboard.
-
-## What it does
-
-- **Overview / Campaigns / Video / Audience / Fatigue / Intelligence** —
-  ports of the original dashboard's tabs: spend & conversation trends, a
-  sortable campaigns table with CPR/CPC/hook%/completion%, video retention
-  funnels, age/gender audience breakdowns, ad-fatigue detection (7-day vs
-  prior-7-day CTR comparison, card + heatmap views), and dynamic
-  efficiency-grade insight cards (A/B/C/D) computed live from your data — no
-  hardcoded campaign names or numbers.
-- **Page Insights** (the main new addition) — organic Page performance for
-  executives: follower growth headline, 28-day rolling engagement trend,
-  reactions breakdown, reach/views with a view-to-follow conversion KPI, an
-  organic-engagement-vs-ad-spend overlay chart, a top-10 posts table, and
-  automatic anomaly callouts when daily follows/unfollows spike more than 2x
-  their trailing 7-day average.
+A Next.js 14 dashboard for Ekagra Health's marketing team, combining Meta Ads
+performance with organic Facebook Page insights in one internal tool.
 
 ## Running locally
 
@@ -30,67 +12,58 @@ npm run dev
 
 Then open http://localhost:3000.
 
-## Connecting your Meta account
+For local use, copy `.env.example` to `.env.local` and fill in real values.
+Never commit `.env.local`.
 
-On first load you'll see a lock screen asking for:
+## Securing The Dashboard
 
-- **Meta Ads Access Token** — a long-lived token from Meta Business Suite →
-  System Users → Generate Token
-- **Ad Account ID** — numeric ID (with or without the `act_` prefix)
-- **Facebook Page ID** (optional) — enables the Page Insights tab
-- **Facebook Page Access Token** (optional) — required alongside the Page ID
+The browser lock screen asks only for a dashboard password. Meta credentials are
+configured as server-side environment variables, so users no longer paste access
+tokens into the browser.
 
-Required permissions — same as the original dashboard:
+Set these variables in Vercel Project Settings -> Environment Variables:
+
+- `SITE_PASSWORD` - password users enter to unlock the dashboard
+- `SITE_AUTH_SECRET` - optional long random signing secret for the httpOnly auth cookie
+- `META_ADS_ACCESS_TOKEN` - long-lived Meta token from Business Suite -> System Users
+- `META_AD_ACCOUNT_ID` - numeric ad account ID, with or without the `act_` prefix
+- `META_PAGE_ID` - optional, enables the Page Insights tab
+- `META_PAGE_ACCESS_TOKEN` - optional, required alongside `META_PAGE_ID`
+
+Required Meta permissions:
 
 - `ads_read`
 - `read_insights`
-- `pages_read_engagement` (only needed for Page Insights)
+- `pages_read_engagement` - only needed for Page Insights
 
-Submitting the form POSTs your credentials to `/api/session`, which stores
-them in a single **httpOnly, secure, sameSite=lax cookie**. They are never
-written to localStorage, never sent back to client-side JavaScript, and
-never logged. All Graph API calls happen server-side via `/api/meta` (ad
-account) and `/api/meta-page` (Facebook Page) — the browser never talks to
-`graph.facebook.com` directly.
+Submitting the password to `/api/session` creates a secure httpOnly cookie. The
+cookie contains only an HMAC session marker, not Meta credentials. All Graph API
+calls happen server-side via `/api/meta` and `/api/meta-page`, so the browser
+never talks to `graph.facebook.com` directly and never receives the access
+tokens.
 
-Use "⚙ Change credentials" in the header to clear the session cookie and
-reconnect with different credentials.
+Use "Lock dashboard" in the header to clear the site session cookie.
 
-## No secrets are hardcoded or committed
+## No Secrets Are Committed
 
-This repository contains no API keys, tokens, or account IDs. `.env.example`
-documents that no environment variables are required for basic operation —
-all credentials are supplied at runtime through the lock screen and kept
-server-side only, in memory of the request/cookie, never on disk.
+This repository contains no real API keys, tokens, passwords, or account IDs.
+`.env.example` documents the required variable names with placeholder values.
+Real values should live in Vercel environment variables or a local `.env.local`
+file that is not committed.
 
-## Architecture notes
+## Architecture Notes
 
-- `lib/metaCalc.ts` — framework-agnostic calculation helpers ported from the
-  original dashboard (`getC`, `getCPR`, `getVid`, `getLeads`,
-  `isActiveRunning`, `adType`, `fmt`, fatigue classification, anomaly
-  detection, etc).
-- `lib/session.ts` — server-only cookie read/write for the combined
-  credential payload.
-- `app/api/session/route.ts` — sets/reads/clears the session cookie.
-- `app/api/meta/route.ts` — proxies ad-account Graph API calls.
-- `app/api/meta-page/route.ts` — proxies Facebook Page Graph API calls
-  (`/insights`, `/posts`, profile fields).
-- `components/tabs/*` — one component per dashboard tab; each manages its
-  own date range and data fetching via the shared `lib/useCampaigns.ts` hook
-  or direct `lib/api.ts` calls.
-- Charts use [Recharts](https://recharts.org/).
+- `lib/metaCalc.ts` - framework-agnostic calculation helpers ported from the original dashboard.
+- `lib/session.ts` - server-only password session and Meta environment credential helper.
+- `app/api/session/route.ts` - verifies the dashboard password and manages the site session cookie.
+- `app/api/meta/route.ts` - proxies ad-account Graph API calls.
+- `app/api/meta-page/route.ts` - proxies Facebook Page Graph API calls.
+- `components/tabs/*` - one component per dashboard tab.
+- Charts use Recharts.
 
-## Known gaps / v1 limitations
+## Known Gaps
 
-- **Boosted-post detection is out of scope for v1.** All posts in the Page
-  Insights "Top posts" table are labeled "Organic" — this does not confirm
-  zero ad spend behind a post; cross-referencing boosted post IDs against ad
-  creatives is a follow-up.
-- Fatigue detection ports the original's exact heuristic: last-7-day average
-  CTR vs prior-7-day average CTR per campaign (`classifyFatigue` in
-  `lib/metaCalc.ts`), needing at least 14 days of daily data; it is not a
-  formal statistical model.
-- Audience breakdowns use account-level `age`/`gender` breakdowns; there is
-  no campaign-level audience drill-down yet.
-- The organic-vs-paid overlay chart aligns by calendar date; it does not
-  attempt to model delayed/lagged effects of ad spend on organic engagement.
+- Boosted-post detection is out of scope for v1.
+- Fatigue detection ports the original heuristic: last-7-day average CTR vs prior-7-day average CTR per campaign.
+- Audience breakdowns use account-level age/gender breakdowns.
+- The organic-vs-paid overlay chart aligns by calendar date and does not model lagged effects.

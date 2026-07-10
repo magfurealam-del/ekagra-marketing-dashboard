@@ -1,37 +1,80 @@
 // lib/session.ts
-// Canonical session types + server-only cookie reader/serializer.
-// Credentials never touch client-side localStorage or JS after submission —
-// they live only in an httpOnly cookie, set by app/api/session/route.ts and
-// read here by the Meta proxy API routes.
+// Site auth + server-only Meta credential helpers.
+// Meta credentials are loaded from environment variables and never sent to the
+// browser. The browser only receives an httpOnly cookie proving the dashboard
+// password was accepted.
 
+import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 
 export const SESSION_COOKIE = "ek_session";
 
 export interface EkagraSession {
-  adToken: string; // Meta Ads access token (ads_read, read_insights)
-  adAccountId: string; // Ad Account ID, without "act_" prefix
-  pageId: string; // Facebook Page ID or username (optional)
-  pageToken: string; // Page access token with pages_read_engagement (optional)
+  adToken: string;
+  adAccountId: string;
+  pageId: string;
+  pageToken: string;
 }
 
-export function readSession(): EkagraSession | null {
-  const raw = cookies().get(SESSION_COOKIE)?.value;
-  if (!raw) return null;
+function authSecret() {
+  return process.env.SITE_AUTH_SECRET || process.env.SITE_PASSWORD || "";
+}
+
+function authCookieValue() {
+  const secret = authSecret();
+  if (!secret) return "";
+  return createHmac("sha256", secret).update("ekagra-dashboard").digest("hex");
+}
+
+export function hasSitePasswordConfigured() {
+  return Boolean(process.env.SITE_PASSWORD);
+}
+
+export function hasValidSiteSession() {
+  const expected = authCookieValue();
+  const actual = cookies().get(SESSION_COOKIE)?.value || "";
+  if (!expected || !actual) return false;
   try {
-    const parsed = JSON.parse(raw) as Partial<EkagraSession>;
-    if (!parsed.adToken || !parsed.adAccountId) return null;
-    return {
-      adToken: parsed.adToken,
-      adAccountId: parsed.adAccountId,
-      pageId: parsed.pageId ?? "",
-      pageToken: parsed.pageToken ?? "",
-    };
+    return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
   } catch {
-    return null;
+    return false;
   }
 }
 
-export function serializeSession(s: EkagraSession): string {
-  return JSON.stringify(s);
+export function verifySitePassword(password: string) {
+  const expected = process.env.SITE_PASSWORD || "";
+  if (!expected || !password) return false;
+  try {
+    return timingSafeEqual(Buffer.from(password), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
+
+export function serializeSiteSession() {
+  return authCookieValue();
+}
+
+export function readSession(): EkagraSession | null {
+  if (!hasValidSiteSession()) return null;
+
+  const adToken = process.env.META_ADS_ACCESS_TOKEN?.trim() || "";
+  const adAccountId = (process.env.META_AD_ACCOUNT_ID || "").trim().replace(/^act_/, "");
+  if (!adToken || !adAccountId) return null;
+
+  return {
+    adToken,
+    adAccountId,
+    pageId: process.env.META_PAGE_ID?.trim() || "",
+    pageToken: process.env.META_PAGE_ACCESS_TOKEN?.trim() || "",
+  };
+}
+
+export function getCredentialStatus() {
+  return {
+    hasAds: Boolean(process.env.META_ADS_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_ID),
+    hasPage: Boolean(process.env.META_PAGE_ID && process.env.META_PAGE_ACCESS_TOKEN),
+    adAccountId: (process.env.META_AD_ACCOUNT_ID || "").trim().replace(/^act_/, ""),
+    pageId: process.env.META_PAGE_ID?.trim() || "",
+  };
 }

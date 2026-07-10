@@ -49,7 +49,14 @@ export async function metaAdsAll(path: string, params: Record<string, string>): 
   return rows;
 }
 
-export async function getSessionStatus(): Promise<{ connected: boolean; hasPage: boolean }> {
+export async function getSessionStatus(): Promise<{
+  connected: boolean;
+  authenticated: boolean;
+  hasAds: boolean;
+  hasPage: boolean;
+  adAccountId?: string;
+  pageId?: string;
+}> {
   const r = await fetch("/api/session", { cache: "no-store" });
   return r.json();
 }

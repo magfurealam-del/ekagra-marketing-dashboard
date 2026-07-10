@@ -55,10 +55,10 @@ export default function DashboardShell() {
             setHasPage(false);
             setState("locked");
           }}
-          title="Change credentials"
+          title="Lock dashboard"
           className="hbtn my-1.5 flex-shrink-0 rounded-md border border-border2 bg-card px-3 py-1.5 text-xs font-semibold text-[#C8D5DF] hover:bg-[#253545]"
         >
-          ⚙ Change credentials
+          Lock dashboard
         </button>
       </div>
       <main className="mx-auto max-w-[1400px] p-5 pb-16">
