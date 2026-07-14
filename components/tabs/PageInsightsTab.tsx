@@ -89,6 +89,7 @@ interface VideoMeta {
   created_time: string;
   permalink_url?: string;
   length?: number; // seconds
+  views?: number;
 }
 
 // Reel-level insight data (from /{videoId}/video_insights endpoint)
@@ -164,6 +165,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
   const [posts,             setPosts]              = useState<TopPost[]>([]);
   const [videos,            setVideos]             = useState<VideoMeta[]>([]);
   const [reelInsights,      setReelInsights]       = useState<Record<string, ReelInsight>>({});
+  const [reelLoading,       setReelLoading]        = useState(false);
 
   const [statusVideo,    setStatusVideo]    = useState<LoadStatus | null>(null);
   const [statusEngage,   setStatusEngage]   = useState<LoadStatus | null>(null);
@@ -259,7 +261,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     // g6: video list — fetch up to 20 reels, then immediately trigger per-reel insight fetch
     const g6 = metaPageGet({
       path: "videos",
-      fields: "id,title,description,created_time,permalink_url,length",
+      fields: "id,title,description,created_time,permalink_url,length,views",
       limit: "20",
     }).then(async (d: any) => {
       if (cancelled) return;
@@ -269,6 +271,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
 
       // Fetch per-reel insights for top 10 reels
       const top = vids.slice(0, 10);
+      setReelLoading(top.length > 0);
       const ALL_REEL = [
         "blue_reels_play_count","fb_reels_total_plays","fb_reels_replay_count",
         "post_video_avg_time_watched","post_video_view_time","post_impressions_unique",
@@ -276,7 +279,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
         "post_video_followers","post_video_retention_graph",
       ].join(",");
 
-      await Promise.allSettled(
+      Promise.allSettled(
         top.map(async (v: VideoMeta) => {
           try {
             const rd: any = await metaPageGet({
@@ -290,7 +293,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
             }
           } catch (_) { /* silent per-reel failure */ }
         })
-      );
+      ).finally(() => { if (!cancelled) setReelLoading(false); });
     }).catch((e: any) => { if (!cancelled) setStatusVideoList({ ok: false, error: e?.message || String(e) }); });
 
     Promise.allSettled([g1, g2, g3, g4, g5, g6]).then(() => {
@@ -420,6 +423,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     // reel aggregates for Overview
     reelList, totalReelPlays, totalReelReach, totalReelReplays, avgReplayRate,
     totalReelFollows, bestReel, reelInsights,
+    reelLoading,
   };
 
   return (
@@ -887,19 +891,23 @@ function WatchDepthHeatmap({ videos, insights }: { videos: VideoMeta[]; insights
   );
 }
 
-function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart, videos, statusVideoList, reelInsights, reelList }: any) {
+function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart, videos, statusVideoList, reelInsights, reelList, reelLoading }: any) {
   const repeatProxy = totalViews && totalUnique ? ((totalViews - totalUnique) / totalViews) * 100 : 0;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const displayInsights = useMemo(() => Object.fromEntries((videos as VideoMeta[]).map((v) => [v.id, reelInsights[v.id] ?? {
+    playCount: Number(v.views) || 0, totalPlays: Number(v.views) || 0, replayCount: 0, reach: 0,
+    avgWatchMs: 0, totalViewTimeMs: 0, follows: 0, reactions: {}, socialActions: {}, retentionCurve: [],
+  }])), [videos, reelInsights]);
 
   // Auto-select first reel with insight data
   useEffect(() => {
     if (selectedId) return;
-    const first = (videos as VideoMeta[]).find((v: VideoMeta) => reelInsights[v.id]);
+    const first = (videos as VideoMeta[])[0];
     if (first) setSelectedId(first.id);
   }, [reelInsights, videos, selectedId]);
 
   const selectedReel   = selectedId ? (videos as VideoMeta[]).find((v: VideoMeta) => v.id === selectedId) : null;
-  const selectedInsight: ReelInsight | null = selectedId ? reelInsights[selectedId] ?? null : null;
+  const selectedInsight: ReelInsight | null = selectedId ? displayInsights[selectedId] ?? null : null;
 
   // Overlaid retention chart data
   const retentionChartData = useMemo(() => {
@@ -923,11 +931,11 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
     });
   }, [videos, reelInsights]);
 
-  const reelsWithData = (videos as VideoMeta[]).filter((v: VideoMeta) => reelInsights[v.id]);
+  const reelsWithData = (videos as VideoMeta[]);
 
   // Reel leaderboard: sort by play count
   const reelLeaderboard = [...reelsWithData].sort((a, b) =>
-    (reelInsights[b.id]?.playCount ?? 0) - (reelInsights[a.id]?.playCount ?? 0)
+    (displayInsights[b.id]?.playCount ?? 0) - (displayInsights[a.id]?.playCount ?? 0)
   );
 
   return (
@@ -1137,7 +1145,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
               <span style={{ color: "#FBBF24" }}>■ 35–74%</span>{" "}
               <span style={{ color: "#F87171" }}>■ &lt;35%</span>
             </p>
-            <WatchDepthHeatmap videos={videos} insights={reelInsights} />
+              <WatchDepthHeatmap videos={videos} insights={displayInsights} />
           </Card>
 
           {/* Reel leaderboard */}
@@ -1160,7 +1168,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
               </thead>
               <tbody>
                 {reelLeaderboard.map((v: VideoMeta, i: number) => {
-                  const ins = reelInsights[v.id];
+                  const ins = displayInsights[v.id];
                   const totalRxn = Object.values(ins.reactions).reduce<number>((s, x) => s + Number(x), 0);
                   const shares = ins.socialActions["SHARE"] || 0;
                   const title = v.title || v.description?.slice(0, 50) || "—";
@@ -1185,7 +1193,11 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
                 })}
                 {reelLeaderboard.length === 0 && (
                   <tr><td colSpan={10} className="py-6 text-center text-muted2">
-                    {videos.length === 0 ? "No reels found on this Page." : "Loading reel insights…"}
+                    {videos.length === 0
+                      ? "No reels found on this Page."
+                      : reelLoading
+                        ? "Loading reel insights…"
+                        : "No reel insights are available for these videos."}
                   </td></tr>
                 )}
               </tbody>

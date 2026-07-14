@@ -32,7 +32,14 @@ export async function metaPageGet(params: Record<string, string | undefined>): P
   Object.entries(params).forEach(([k, v]) => {
     if (v != null) qs.set(k, v);
   });
-  const r = await fetch(`/api/meta-page?${qs.toString()}`, { cache: "no-store" });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 20_000);
+  let r: Response;
+  try {
+    r = await fetch(`/api/meta-page?${qs.toString()}`, { cache: "no-store", signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
   return handle(r);
 }
 
