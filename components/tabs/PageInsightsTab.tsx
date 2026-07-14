@@ -92,6 +92,14 @@ interface VideoMeta {
   views?: number;
 }
 
+function facebookPostUrl(id: string, permalink?: string): string {
+  if (permalink && /^https?:\/\/(www\.)?facebook\.com\//i.test(permalink)) return permalink;
+  const [pageId, postId] = id.split("_");
+  return pageId && postId
+    ? `https://www.facebook.com/${pageId}/posts/${postId}`
+    : `https://www.facebook.com/${id}`;
+}
+
 // Reel-level insight data (from /{videoId}/video_insights endpoint)
 interface ReelInsight {
   playCount: number;       // blue_reels_play_count — unique plays (1ms+, no replays)
@@ -272,11 +280,11 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
       // Fetch per-reel insights for top 10 reels
       const top = vids.slice(0, 10);
       setReelLoading(top.length > 0);
-      const ALL_REEL = [
+      const CORE_REEL = [
         "blue_reels_play_count","fb_reels_total_plays","fb_reels_replay_count",
         "post_video_avg_time_watched","post_video_view_time","post_impressions_unique",
         "post_video_social_actions","post_video_likes_by_reaction_type",
-        "post_video_followers","post_video_retention_graph",
+        "post_video_followers",
       ].join(",");
 
       Promise.allSettled(
@@ -284,7 +292,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
           try {
             const rd: any = await metaPageGet({
               path: `video_insights/${v.id}`,
-              metrics: ALL_REEL,
+              metrics: CORE_REEL,
               period: "lifetime",
             });
             if (!cancelled) {
@@ -292,6 +300,18 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
               setReelInsights((prev) => ({ ...prev, [v.id]: ins }));
             }
           } catch (_) { /* silent per-reel failure */ }
+          // Retention is isolated because one unsupported metric must not
+          // invalidate the otherwise useful Reel metrics.
+          for (const metric of ["post_video_retention_graph", "total_video_retention_graph"]) {
+            try {
+              const ret: any = await metaPageGet({ path: `video_insights/${v.id}`, metrics: metric, period: "lifetime" });
+              const parsed = parseReelInsight(ret.data || [], v.length || 0);
+              if (parsed.retentionCurve.length && !cancelled) {
+                setReelInsights((prev) => ({ ...prev, [v.id]: { ...(prev[v.id] || parsed), retentionCurve: parsed.retentionCurve } }));
+                break;
+              }
+            } catch (_) { /* try the compatibility metric */ }
+          }
         })
       ).finally(() => { if (!cancelled) setReelLoading(false); });
     }).catch((e: any) => { if (!cancelled) setStatusVideoList({ ok: false, error: e?.message || String(e) }); });
@@ -720,8 +740,8 @@ function PostsSection({ topPosts }: { topPosts: TopPost[] }) {
                 <td className="text-muted2">{i + 1}</td>
                 <td className="text-muted2">{p.created_time.slice(0, 10)}</td>
                 <td className="max-w-[280px] overflow-hidden text-ellipsis" title={p.message}>
-                  {p.permalink_url
-                    ? <a href={p.permalink_url} target="_blank" rel="noopener noreferrer" className="border-b border-dashed border-accent/40 text-[#C8D5DF] no-underline">{p.message.slice(0, 75)}</a>
+                  {p.id
+                    ? <a href={facebookPostUrl(p.id, p.permalink_url)} target="_blank" rel="noopener noreferrer" className="border-b border-dashed border-accent/40 text-[#C8D5DF] no-underline">{p.message.slice(0, 75)}</a>
                     : p.message.slice(0, 75)}
                 </td>
                 <td className="text-right">{p.likes.toLocaleString()}</td>
