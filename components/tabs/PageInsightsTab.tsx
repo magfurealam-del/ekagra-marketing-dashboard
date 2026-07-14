@@ -1161,7 +1161,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
               <tbody>
                 {reelLeaderboard.map((v: VideoMeta, i: number) => {
                   const ins = reelInsights[v.id];
-                  const totalRxn = Object.values(ins.reactions).reduce((s, x) => s + Number(x), 0);
+                  const totalRxn = Object.values(ins.reactions).reduce<number>((s, x) => s + Number(x), 0);
                   const shares = ins.socialActions["SHARE"] || 0;
                   const title = v.title || v.description?.slice(0, 50) || "—";
                   return (
