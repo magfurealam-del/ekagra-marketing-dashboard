@@ -794,38 +794,59 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
     setVideoInsights({});
     setInsightErrors({});
 
+    const BASIC = "total_video_views,total_video_views_unique,total_video_complete_views,total_video_avg_time_watched,total_video_view_time";
+    const RET_METRICS = ["total_video_retention_graph_v2", "total_video_retention_graph"];
+
+    // Phase 1: basic scalar metrics — isolated from retention so any metric error doesn't block the heatmap
     Promise.allSettled(
       top.map((v: VideoMeta) =>
-        metaPageGet({
-          path: `video_insights/${v.id}`,
-          metrics: [
-            "total_video_views",
-            "total_video_views_unique",
-            "total_video_complete_views",
-            "total_video_avg_time_watched",
-            "total_video_view_time",
-            "total_video_retention_graph_v2",
-          ].join(","),
-          period: "lifetime",
-        })
+        metaPageGet({ path: `video_insights/${v.id}`, metrics: BASIC, period: "lifetime" })
           .then((d: any) => ({ id: v.id, data: parseVideoInsightData(d.data || []) }))
           .catch((e: any) => ({ id: v.id, error: e?.message || String(e) }))
       )
-    ).then((results) => {
+    ).then(async (basicResults) => {
       const ins: Record<string, VideoInsightData> = {};
       const errs: Record<string, string> = {};
-      results.forEach((r) => {
+      basicResults.forEach((r) => {
         if (r.status === "fulfilled") {
           const val = r.value as any;
           if (val.error) errs[val.id] = val.error;
           else ins[val.id] = val.data;
         }
       });
-      setVideoInsights(ins);
+
+      // Render heatmap immediately with basic stats so UI isn't stuck
+      setVideoInsights({ ...ins });
+      const firstWithData = top.find((v: VideoMeta) => ins[v.id]);
+      if (firstWithData) setSelectedVideoId((prev: string | null) => prev ?? firstWithData.id);
+
+      // Phase 2: retention curve — one fetch per video, try v2 then fallback, silent per-video failure
+      await Promise.allSettled(
+        top
+          .filter((v: VideoMeta) => ins[v.id])
+          .map(async (v: VideoMeta) => {
+            for (const metric of RET_METRICS) {
+              try {
+                const d: any = await metaPageGet({ path: `video_insights/${v.id}`, metrics: metric, period: "lifetime" });
+                const retM = (d.data || []).find((m: any) =>
+                  m.name === "total_video_retention_graph_v2" || m.name === "total_video_retention_graph"
+                );
+                const rawVal = retM?.values?.[0]?.value;
+                if (rawVal && Object.keys(rawVal).length > 0) {
+                  const curve = Object.entries(rawVal as Record<string, number>)
+                    .map(([k, val]) => ({ pct: Math.round(parseFloat(k) * 100), retention: Number(val) }))
+                    .sort((a, b) => a.pct - b.pct);
+                  ins[v.id] = { ...ins[v.id], retentionCurve: curve };
+                  setVideoInsights((prev: Record<string, VideoInsightData>) => ({ ...prev, [v.id]: { ...ins[v.id] } }));
+                  return;
+                }
+              } catch (_) { /* try next metric */ }
+            }
+          })
+      );
+
       setInsightErrors(errs);
       setLoadingInsights(false);
-      const firstWithData = top.find((v: VideoMeta) => ins[v.id]);
-      if (firstWithData) setSelectedVideoId(firstWithData.id);
     });
   }, [videos]);
 
@@ -1025,7 +1046,8 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
 
           {Object.keys(insightErrors).length > 0 && (
             <div className="mb-3 rounded-card border border-[#F87171]/20 bg-[#2D0F0F] px-4 py-2.5 text-[11px] text-[#F87171]">
-              {Object.keys(insightErrors).length} video(s) could not load retention data — may require more views or different API permissions.
+              <strong>{Object.keys(insightErrors).length} video(s) failed to load basic insights.</strong>{' '}
+              First error: {Object.values(insightErrors)[0]}
             </div>
           )}
         </>
