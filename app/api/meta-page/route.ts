@@ -36,12 +36,22 @@ export async function GET(req: NextRequest) {
   }
 
   const qs = new URLSearchParams();
+
+  // Page-level insights: use the metric/since/until/period params
   if (!pathOverride) {
     if (metrics) qs.set("metric", metrics);
     if (since) qs.set("since", since);
     if (until) qs.set("until", until);
     if (period) qs.set("period", period);
   }
+
+  // Per-video insights: forward metric and period
+  if (pathOverride?.startsWith("video_insights/")) {
+    if (metrics) qs.set("metric", metrics);
+    if (period) qs.set("period", period);
+  }
+
+  // Forward any other params not already handled (e.g. fields, limit)
   const handled = new Set(["path", "metrics", "since", "until", "period"]);
   searchParams.forEach((value, key) => {
     if (!handled.has(key)) qs.set(key, value);

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, ComposedChart, AreaChart, Area, Bar, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, LineChart,
 } from "recharts";
 import { Card, DateRangePicker, ErrorBanner, SectionLabel, Spinner } from "@/components/ui";
 import { metaPageGet } from "@/lib/api";
@@ -26,6 +26,10 @@ function ms2hm(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return h ? `${h}h ${m}m` : `${m}m`;
+}
+function sec2str(s: number): string {
+  if (s < 60) return s.toFixed(0) + "s";
+  return Math.floor(s / 60) + "m " + (s % 60).toFixed(0) + "s";
 }
 function sum(arr: { value: number }[]): number {
   return arr.reduce((s, x) => s + x.value, 0);
@@ -66,10 +70,58 @@ const REACTION_EMOJI: Record<string, string> = {
 };
 const REACTION_KEYS = ["like", "love", "wow", "haha", "sorry", "anger"];
 
+const VIDEO_COLORS = ["#6366F1","#38BDF8","#10B981","#F59E0B","#F87171","#C084FC","#2DD4BF","#FB923C"];
+
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface DaySeries { date: string; value: number }
 interface LoadStatus { ok: boolean; error?: string }
+
+interface VideoMeta {
+  id: string;
+  title?: string;
+  description?: string;
+  created_time: string;
+  permalink_url?: string;
+  length?: number;
+}
+
+interface VideoInsightData {
+  totalViews: number;
+  uniqueViews: number;
+  completeViews: number;
+  avgWatchMs: number;
+  totalViewTimeMs: number;
+  retentionCurve: { pct: number; retention: number }[];
+}
+
+// ─── video insight parser ──────────────────────────────────────────────────────
+
+function parseVideoInsightData(dataArr: any[]): VideoInsightData {
+  const by: Record<string, any> = {};
+  (dataArr || []).forEach((m: any) => (by[m.name] = m));
+
+  const getScalar = (name: string): number => {
+    const m = by[name];
+    if (!m?.values?.[0]) return 0;
+    return Number(m.values[0].value) || 0;
+  };
+
+  const retM = by["total_video_retention_graph_v2"];
+  const retRaw: Record<string, number> = retM?.values?.[0]?.value || {};
+  const retentionCurve = Object.entries(retRaw)
+    .map(([k, v]) => ({ pct: Math.round(parseFloat(k) * 100), retention: Number(v) }))
+    .sort((a, b) => a.pct - b.pct);
+
+  return {
+    totalViews:      getScalar("total_video_views"),
+    uniqueViews:     getScalar("total_video_views_unique"),
+    completeViews:   getScalar("total_video_complete_views"),
+    avgWatchMs:      getScalar("total_video_avg_time_watched"),
+    totalViewTimeMs: getScalar("total_video_view_time"),
+    retentionCurve,
+  };
+}
 
 // ─── main component ───────────────────────────────────────────────────────────
 
@@ -94,12 +146,14 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
   const [pageViews,         setPageViews]          = useState<DaySeries[]>([]);
   const [fanCount,          setFanCount]           = useState<number | null>(null);
   const [posts,             setPosts]              = useState<TopPost[]>([]);
+  const [videos,            setVideos]             = useState<VideoMeta[]>([]);
 
   const [statusVideo,    setStatusVideo]    = useState<LoadStatus | null>(null);
   const [statusEngage,   setStatusEngage]   = useState<LoadStatus | null>(null);
   const [statusAudience, setStatusAudience] = useState<LoadStatus | null>(null);
   const [statusViews,    setStatusViews]    = useState<LoadStatus | null>(null);
   const [statusPosts,    setStatusPosts]    = useState<LoadStatus | null>(null);
+  const [statusVideoList,setStatusVideoList]= useState<LoadStatus | null>(null);
   const [loading,        setLoading]        = useState(true);
 
   useEffect(() => {
@@ -107,7 +161,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     let cancelled = false;
     setLoading(true);
     setStatusVideo(null); setStatusEngage(null); setStatusAudience(null);
-    setStatusViews(null); setStatusPosts(null);
+    setStatusViews(null); setStatusPosts(null); setStatusVideoList(null);
 
     const { since, until } = range;
 
@@ -184,7 +238,17 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
       setStatusPosts({ ok: true });
     }).catch((e: any) => { if (!cancelled) setStatusPosts({ ok: false, error: e?.message || String(e) }); });
 
-    Promise.allSettled([g1, g2, g3, g4, g5]).then(() => {
+    const g6 = metaPageGet({
+      path: "videos",
+      fields: "id,title,description,created_time,permalink_url,length",
+      limit: "20",
+    }).then((d: any) => {
+      if (cancelled) return;
+      setVideos((d.data || []) as VideoMeta[]);
+      setStatusVideoList({ ok: true });
+    }).catch((e: any) => { if (!cancelled) setStatusVideoList({ ok: false, error: e?.message || String(e) }); });
+
+    Promise.allSettled([g1, g2, g3, g4, g5, g6]).then(() => {
       if (!cancelled) setLoading(false);
     });
 
@@ -313,8 +377,8 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
           {section === "overview"  && <OverviewSection  {...sharedProps} />}
           {section === "community" && <CommunitySection {...sharedProps} />}
           {section === "posts"     && <PostsSection topPosts={topPosts} />}
-          {section === "videos"    && <VideosSection   {...sharedProps} />}
-          {section === "health"    && <HealthSection statusVideo={statusVideo} statusEngage={statusEngage} statusAudience={statusAudience} statusViews={statusViews} statusPosts={statusPosts} range={range} totalViews={totalViews} totalEng={totalEng} totalFollows={totalFollows} postsCount={posts.length} />}
+          {section === "videos"    && <VideosSection {...sharedProps} videos={videos} statusVideoList={statusVideoList} />}
+          {section === "health"    && <HealthSection statusVideo={statusVideo} statusEngage={statusEngage} statusAudience={statusAudience} statusViews={statusViews} statusPosts={statusPosts} statusVideoList={statusVideoList} range={range} totalViews={totalViews} totalEng={totalEng} totalFollows={totalFollows} postsCount={posts.length} videoCount={videos.length} />}
         </>
       )}
     </div>
@@ -609,7 +673,7 @@ function PostsSection({ topPosts }: { topPosts: TopPost[] }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SECTION 4 — VIDEO PERFORMANCE (The Audience River)
+// SECTION 4 — VIDEO PERFORMANCE (The Audience River + Per-video Insights)
 // ══════════════════════════════════════════════════════════════════════════════
 
 function AudienceRiver({ totalViews, totalUnique, total30s, sum30sPaid, sum30sOrganic }: any) {
@@ -640,8 +704,152 @@ function AudienceRiver({ totalViews, totalUnique, total30s, sum30sPaid, sum30sOr
   );
 }
 
-function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart }: any) {
+function retentionColor(val: number): string {
+  if (val >= 75) return "#10B981";
+  if (val >= 50) return "#34D399";
+  if (val >= 35) return "#FBBF24";
+  if (val >= 20) return "#F59E0B";
+  return "#F87171";
+}
+
+function WatchDepthHeatmap({ videos, insights }: { videos: VideoMeta[]; insights: Record<string, VideoInsightData> }) {
+  const COLS = [0, 10, 25, 50, 75, 90, 100];
+
+  const getRetAtPct = (curve: { pct: number; retention: number }[], target: number): number | null => {
+    if (!curve.length) return null;
+    const exact = curve.find((p) => p.pct === target);
+    if (exact) return exact.retention;
+    const before = curve.filter((p) => p.pct <= target).at(-1);
+    const after  = curve.find((p) => p.pct >= target);
+    if (!before || !after || before === after) return (before || after)?.retention ?? null;
+    const t = (target - before.pct) / (after.pct - before.pct);
+    return before.retention + t * (after.retention - before.retention);
+  };
+
+  const rows = videos.filter((v) => insights[v.id]);
+  if (!rows.length) return (
+    <p className="py-6 text-center text-[12px] text-muted2">Loading watch-depth data…</p>
+  );
+
+  return (
+    <div className="overflow-x-auto">
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Video</th>
+            <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Views</th>
+            <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)", whiteSpace: "nowrap" }}>Avg Watch</th>
+            {COLS.map((c) => (
+              <th key={c} style={{ textAlign: "center", padding: "6px 4px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)", minWidth: 42 }}>{c}%</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((v, idx) => {
+            const ins = insights[v.id];
+            const title = v.title || v.description?.slice(0, 40) || `Video ${idx + 1}`;
+            return (
+              <tr key={v.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                <td style={{ padding: "6px 8px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {v.permalink_url
+                    ? <a href={v.permalink_url} target="_blank" rel="noopener noreferrer" style={{ color: "#C8D5DF", textDecoration: "none", borderBottom: "1px dashed rgba(56,189,248,.4)" }}>{title}</a>
+                    : <span style={{ color: "#C8D5DF" }}>{title}</span>
+                  }
+                  <span style={{ color: "rgba(200,213,220,.35)", marginLeft: 6 }}>{v.created_time.slice(0, 10)}</span>
+                </td>
+                <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{n(ins.totalViews)}</td>
+                <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{ins.avgWatchMs > 0 ? sec2str(ins.avgWatchMs / 1000) : "—"}</td>
+                {COLS.map((c) => {
+                  const val = getRetAtPct(ins.retentionCurve, c);
+                  const clr = val != null ? retentionColor(val) : "rgba(200,213,220,.15)";
+                  return (
+                    <td key={c} style={{ textAlign: "center", padding: "6px 4px" }}>
+                      <span style={{ display: "inline-block", minWidth: 38, padding: "2px 4px", borderRadius: 4, background: val != null ? clr + "22" : "transparent", color: clr, fontWeight: 700, fontSize: 10 }}>
+                        {val != null ? val.toFixed(0) + "%" : "—"}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart, videos, statusVideoList }: any) {
   const repeatProxy = totalViews && totalUnique ? ((totalViews - totalUnique) / totalViews) * 100 : 0;
+
+  const [videoInsights, setVideoInsights] = useState<Record<string, VideoInsightData>>({});
+  const [insightErrors, setInsightErrors] = useState<Record<string, string>>({});
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!videos || videos.length === 0) return;
+    const top = (videos as VideoMeta[]).slice(0, 8);
+    setLoadingInsights(true);
+    setVideoInsights({});
+    setInsightErrors({});
+
+    Promise.allSettled(
+      top.map((v: VideoMeta) =>
+        metaPageGet({
+          path: `video_insights/${v.id}`,
+          metrics: [
+            "total_video_views",
+            "total_video_views_unique",
+            "total_video_complete_views",
+            "total_video_avg_time_watched",
+            "total_video_view_time",
+            "total_video_retention_graph_v2",
+          ].join(","),
+          period: "lifetime",
+        })
+          .then((d: any) => ({ id: v.id, data: parseVideoInsightData(d.data || []) }))
+          .catch((e: any) => ({ id: v.id, error: e?.message || String(e) }))
+      )
+    ).then((results) => {
+      const ins: Record<string, VideoInsightData> = {};
+      const errs: Record<string, string> = {};
+      results.forEach((r) => {
+        if (r.status === "fulfilled") {
+          const val = r.value as any;
+          if (val.error) errs[val.id] = val.error;
+          else ins[val.id] = val.data;
+        }
+      });
+      setVideoInsights(ins);
+      setInsightErrors(errs);
+      setLoadingInsights(false);
+      const firstWithData = top.find((v: VideoMeta) => ins[v.id]);
+      if (firstWithData) setSelectedVideoId(firstWithData.id);
+    });
+  }, [videos]);
+
+  const retentionChartData = useMemo(() => {
+    const videoList = (videos as VideoMeta[]).slice(0, 8).filter((v: VideoMeta) => videoInsights[v.id]);
+    if (!videoList.length) return [];
+    const pcts = new Set<number>();
+    videoList.forEach((v: VideoMeta) => videoInsights[v.id].retentionCurve.forEach((p) => pcts.add(p.pct)));
+    const sorted = Array.from(pcts).sort((a, b) => a - b);
+    return sorted.map((p) => {
+      const row: Record<string, number | string> = { pct: p + "%" };
+      videoList.forEach((v: VideoMeta, i: number) => {
+        const curve = videoInsights[v.id].retentionCurve;
+        const exact = curve.find((c) => c.pct === p);
+        if (exact) row[`v${i}`] = exact.retention;
+      });
+      return row;
+    });
+  }, [videos, videoInsights]);
+
+  const videoList = (videos as VideoMeta[]).slice(0, 8).filter((v: VideoMeta) => videoInsights[v.id]);
+  const selectedInsight = selectedVideoId ? videoInsights[selectedVideoId] : null;
+  const selectedVideo   = selectedVideoId ? (videos as VideoMeta[]).find((v: VideoMeta) => v.id === selectedVideoId) : null;
+
   return (
     <div>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -653,9 +861,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
 
       <SectionLabel>The Audience River — Watch-Depth Funnel</SectionLabel>
       <Card className="mb-3">
-        <p className="mb-4 text-[11px] text-muted2">
-          Width represents share of total 3s+ views. Flow narrows as viewers drop off at each depth threshold.
-        </p>
+        <p className="mb-4 text-[11px] text-muted2">Width represents share of total 3s+ views. Flow narrows as viewers drop off at each depth threshold.</p>
         <AudienceRiver {...{ totalViews, totalUnique, total30s, sum30sPaid, sum30sOrganic }} />
         <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
           {[
@@ -689,9 +895,141 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
         </div>
       </Card>
 
-      <div className="rounded-card border border-[#38BDF8]/20 bg-[#0C2D3F] px-4 py-2.5 text-[12px] text-[#38BDF8]">
-        💡 Per-video retention curves and watch-depth heatmaps require individual video insights (v25.0 <code>/video_insights</code> endpoint). This view shows page-level aggregate performance only.
-      </div>
+      {/* ── Per-video section ── */}
+      <SectionLabel>Per-Video Retention Curves</SectionLabel>
+      {statusVideoList && !statusVideoList.ok ? (
+        <div className="mb-3 rounded-card border border-[#F87171]/30 bg-[#2D0F0F] px-4 py-3 text-[12px] text-[#F87171]">
+          ✗ Could not load video list: {statusVideoList.error}
+        </div>
+      ) : videos.length === 0 && !loadingInsights ? (
+        <div className="mb-3 rounded-card border border-border bg-card px-4 py-6 text-center text-[12px] text-muted2">
+          No videos found on this Page.
+        </div>
+      ) : (
+        <>
+          {loadingInsights && (
+            <div className="mb-3 flex items-center gap-2 text-[12px] text-muted2">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#38BDF8] border-t-transparent" />
+              Fetching per-video insights for {Math.min(videos.length, 8)} videos…
+            </div>
+          )}
+
+          {videoList.length > 0 && (
+            <div className="mb-3 flex gap-1 flex-wrap">
+              {videoList.map((v: VideoMeta, i: number) => {
+                const title = v.title || v.description?.slice(0, 24) || `Video ${i + 1}`;
+                return (
+                  <button key={v.id} onClick={() => setSelectedVideoId(v.id)}
+                    className={`rounded px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                      selectedVideoId === v.id ? "text-white" : "text-muted2 hover:text-text bg-[#111B28]"
+                    }`}
+                    style={selectedVideoId === v.id ? { background: VIDEO_COLORS[i % VIDEO_COLORS.length] } : {}}>
+                    {title.slice(0, 28)}{title.length > 28 ? "…" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedInsight && selectedVideo && (
+            <Card className="mb-3">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-[13px] font-semibold text-text">
+                  {selectedVideo.title || selectedVideo.description?.slice(0, 60) || "Selected Video"}
+                </span>
+                {selectedVideo.length && (
+                  <span className="rounded bg-[#1A2535] px-2 py-0.5 text-[10px] text-muted2">{sec2str(selectedVideo.length)} duration</span>
+                )}
+                {selectedVideo.permalink_url && (
+                  <a href={selectedVideo.permalink_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#38BDF8] underline">View on Facebook ↗</a>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 mb-4">
+                <KpiCard label="Total Views"    value={n(selectedInsight.totalViews)} color="text-[#6366F1]" />
+                <KpiCard label="Unique Viewers" value={n(selectedInsight.uniqueViews)} sub={pct(selectedInsight.uniqueViews, selectedInsight.totalViews) + " of views"} />
+                <KpiCard label="Completions"    value={n(selectedInsight.completeViews)} sub={pct(selectedInsight.completeViews, selectedInsight.totalViews) + " completion"} color={selectedInsight.totalViews > 0 && selectedInsight.completeViews / selectedInsight.totalViews > 0.15 ? "text-[#34D399]" : "text-text"} />
+                <KpiCard label="Avg Watch Time" value={selectedInsight.avgWatchMs > 0 ? sec2str(selectedInsight.avgWatchMs / 1000) : "—"} />
+                <KpiCard label="Total Watch"    value={ms2hm(selectedInsight.totalViewTimeMs)} />
+              </div>
+              {selectedInsight.retentionCurve.length > 0 ? (
+                <>
+                  <div className="mb-1 text-[11px] text-muted2">Retention curve — % of viewers still watching at each point in the video</div>
+                  <div style={{ height: 200 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={selectedInsight.retentionCurve.map((p) => ({ pos: p.pct + "%", retention: p.retention }))}>
+                        <defs>
+                          <linearGradient id="gRet" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10B981" stopOpacity={0.4} />
+                            <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
+                        <XAxis dataKey="pos" tick={TICK} interval={Math.floor(selectedInsight.retentionCurve.length / 10)} />
+                        <YAxis tick={TICK} domain={[0, 100]} unit="%" />
+                        <Tooltip {...TT} formatter={(v: any) => [typeof v === "number" ? v.toFixed(1) + "%" : v, "Retention"]} />
+                        <ReferenceLine y={50} stroke="rgba(200,213,220,.15)" strokeDasharray="4 2" />
+                        <Area type="monotone" dataKey="retention" name="Retention" stroke="#10B981" fill="url(#gRet)" strokeWidth={2} dot={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-muted2 py-4 text-center">Retention curve not available for this video (requires sufficient view volume).</p>
+              )}
+            </Card>
+          )}
+
+          {retentionChartData.length > 0 && videoList.length > 1 && (
+            <>
+              <SectionLabel>Retention Curves — All Videos Overlaid</SectionLabel>
+              <Card className="mb-3">
+                <p className="mb-2 text-[11px] text-muted2">Each line = one video. Higher curves = better viewer hold-through.</p>
+                <div style={{ height: 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={retentionChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
+                      <XAxis dataKey="pct" tick={TICK} interval={Math.floor(retentionChartData.length / 10)} />
+                      <YAxis tick={TICK} domain={[0, 100]} unit="%" />
+                      <Tooltip {...TT} formatter={(v: any, name: string) => {
+                        const idx = parseInt(name.replace("v", ""));
+                        const vMeta = videoList[idx] as VideoMeta;
+                        const label = vMeta?.title || vMeta?.description?.slice(0, 30) || name;
+                        return [typeof v === "number" ? v.toFixed(1) + "%" : v, label];
+                      }} />
+                      <ReferenceLine y={50} stroke="rgba(200,213,220,.12)" strokeDasharray="4 2" />
+                      {videoList.map((_: VideoMeta, i: number) => (
+                        <Line key={i} type="monotone" dataKey={`v${i}`}
+                          stroke={VIDEO_COLORS[i % VIDEO_COLORS.length]}
+                          strokeWidth={selectedVideoId === videoList[i]?.id ? 2.5 : 1.5}
+                          dot={false}
+                          opacity={selectedVideoId && selectedVideoId !== videoList[i]?.id ? 0.35 : 1}
+                          strokeDasharray={i > 3 ? "5 3" : undefined} />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </>
+          )}
+
+          <SectionLabel>Watch-Depth Heatmap — Retention at Key Positions</SectionLabel>
+          <Card className="mb-3">
+            <p className="mb-3 text-[11px] text-muted2">
+              % of viewers still watching at each position.{" "}
+              <span style={{ color: "#10B981" }}>■ 75%+</span>{" "}
+              <span style={{ color: "#FBBF24" }}>■ 35–74%</span>{" "}
+              <span style={{ color: "#F87171" }}>■ &lt;35%</span>
+            </p>
+            <WatchDepthHeatmap videos={videos} insights={videoInsights} />
+          </Card>
+
+          {Object.keys(insightErrors).length > 0 && (
+            <div className="mb-3 rounded-card border border-[#F87171]/20 bg-[#2D0F0F] px-4 py-2.5 text-[11px] text-[#F87171]">
+              {Object.keys(insightErrors).length} video(s) could not load retention data — may require more views or different API permissions.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -714,13 +1052,14 @@ function StatusRow({ label, status }: { label: string; status: LoadStatus | null
   );
 }
 
-function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews, statusPosts, range, totalViews, totalEng, totalFollows, postsCount }: any) {
+function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews, statusPosts, statusVideoList, range, totalViews, totalEng, totalFollows, postsCount, videoCount }: any) {
   const groups = [
-    { label: "Page video metrics — 9 metrics, Group 1",     status: statusVideo },
-    { label: "Page engagement metrics — Group 2",           status: statusEngage },
-    { label: "Audience follow/unfollow metrics — Group 3",  status: statusAudience },
-    { label: "Page views metric — Group 4",                 status: statusViews },
-    { label: "Profile fan_count + published posts — Group 5", status: statusPosts },
+    { label: "Page video metrics — 9 metrics, Group 1",        status: statusVideo },
+    { label: "Page engagement metrics — Group 2",              status: statusEngage },
+    { label: "Audience follow/unfollow metrics — Group 3",     status: statusAudience },
+    { label: "Page views metric — Group 4",                    status: statusViews },
+    { label: "Profile fan_count + published posts — Group 5",  status: statusPosts },
+    { label: "Page video list (per-video insights) — Group 6", status: statusVideoList },
   ];
   const okCount   = groups.filter((g) => g.status?.ok).length;
   const failCount = groups.filter((g) => g.status && !g.status.ok).length;
@@ -743,10 +1082,11 @@ function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews,
       <Card className="mb-3">
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           {[
-            { label: "Video Views Loaded",   value: n(totalViews) },
-            { label: "Post Engagements",      value: n(totalEng) },
-            { label: "Posts Loaded",          value: String(postsCount) },
-            { label: "New Follows",           value: n(totalFollows) },
+            { label: "Video Views Loaded", value: n(totalViews) },
+            { label: "Post Engagements",   value: n(totalEng) },
+            { label: "Posts Loaded",       value: String(postsCount) },
+            { label: "Videos Loaded",      value: String(videoCount) },
+            { label: "New Follows",        value: n(totalFollows) },
           ].map(({ label, value }) => (
             <div key={label}>
               <div className="text-[10px] font-bold uppercase text-muted2">{label}</div>
