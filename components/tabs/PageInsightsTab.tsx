@@ -35,7 +35,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [fans, setFans] = useState<{ date: string; value: number }[]>([]);
+  const [fanCount, setFanCount] = useState<number | null>(null);
   const [follows, setFollows] = useState<{ date: string; value: number }[]>([]);
   const [unfollows, setUnfollows] = useState<{ date: string; value: number }[]>([]);
   const [engagement, setEngagement] = useState<{ date: string; value: number }[]>([]);
@@ -55,7 +55,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     setError("");
 
     const metrics = [
-      "page_fans",
+      
       "page_daily_follows_unique",
       "page_daily_unfollows_unique",
       "page_post_engagements",
@@ -76,7 +76,9 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
         const byName: Record<string, any> = {};
         (insightsData.data || []).forEach((m: any) => (byName[m.name] = m));
 
-        setFans(flattenScalarMetric(byName["page_fans"]));
+        // fetch fan_count separately (page_fans metric was deprecated by Meta)
+        const profile = await metaPageGet({ path: "profile", fields: "fan_count" }).catch(() => ({}));
+        if (!cancelled) setFanCount(profile.fan_count ?? null);
         setFollows(flattenScalarMetric(byName["page_daily_follows_unique"]));
         setUnfollows(flattenScalarMetric(byName["page_daily_unfollows_unique"]));
         setEngagement(flattenScalarMetric(byName["page_post_engagements"]));
@@ -114,7 +116,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     };
   }, [hasPage, range.since, range.until]);
 
-  const totalFollowers = fans.length ? fans[fans.length - 1].value : null;
+  const totalFollowers = fanCount;
   const netFollows = follows.reduce((s, f) => s + f.value, 0) - unfollows.reduce((s, u) => s + u.value, 0);
   const trend7 = trendArrow(follows.slice(-7), unfollows.slice(-7));
   const trend28 = trendArrow(follows.slice(-28), unfollows.slice(-28));
