@@ -29,7 +29,7 @@ function ms2hm(ms: number): string {
 }
 function sec2str(s: number): string {
   if (s < 60) return s.toFixed(0) + "s";
-  return Math.floor(s / 60) + "m " + (s % 60).toFixed(0) + "s";
+  return Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
 }
 function sum(arr: { value: number }[]): number {
   return arr.reduce((s, x) => s + x.value, 0);
@@ -56,6 +56,7 @@ const C = {
   green:   "#34D399",
   amber:   "#FBBF24",
   red:     "#F87171",
+  purple:  "#C084FC",
   grid:    "rgba(255,255,255,.04)",
 };
 const TICK = { fontSize: 10, fill: "rgba(200,213,220,.4)" };
@@ -69,6 +70,10 @@ const REACTION_EMOJI: Record<string, string> = {
   like: "👍", love: "❤️", wow: "😮", haha: "😂", sorry: "😢", anger: "😡",
 };
 const REACTION_KEYS = ["like", "love", "wow", "haha", "sorry", "anger"];
+const REACTION_API_MAP: Record<string, string> = {
+  REACTION_LIKE: "like", REACTION_LOVE: "love", REACTION_WOW: "wow",
+  REACTION_HAHA: "haha", REACTION_SORRY: "sorry", REACTION_ANGER: "anger",
+};
 
 const VIDEO_COLORS = ["#6366F1","#38BDF8","#10B981","#F59E0B","#F87171","#C084FC","#2DD4BF","#FB923C"];
 
@@ -83,42 +88,53 @@ interface VideoMeta {
   description?: string;
   created_time: string;
   permalink_url?: string;
-  length?: number;
+  length?: number; // seconds
 }
 
-interface VideoInsightData {
-  totalViews: number;
-  uniqueViews: number;
-  completeViews: number;
-  avgWatchMs: number;
-  totalViewTimeMs: number;
-  retentionCurve: { pct: number; retention: number }[];
+// Reel-level insight data (from /{videoId}/video_insights endpoint)
+interface ReelInsight {
+  playCount: number;       // blue_reels_play_count — unique plays (1ms+, no replays)
+  totalPlays: number;      // fb_reels_total_plays — total plays incl replays
+  replayCount: number;     // fb_reels_replay_count
+  reach: number;           // post_impressions_unique
+  avgWatchMs: number;      // post_video_avg_time_watched
+  totalViewTimeMs: number; // post_video_view_time
+  follows: number;         // post_video_followers
+  reactions: Record<string, number>;     // post_video_likes_by_reaction_type (keyed by REACTION_LIKE etc)
+  socialActions: Record<string, number>; // post_video_social_actions (SHARE, COMMENT etc)
+  // retention: keys = seconds (0,1,2…), values = fraction 0-1
+  // stored normalized: positionPct (0-100) → retentionPct (0-100), using video.length
+  retentionCurve: { positionPct: number; retentionPct: number }[];
 }
 
-// ─── video insight parser ──────────────────────────────────────────────────────
+// ─── reel insight parser ──────────────────────────────────────────────────────
 
-function parseVideoInsightData(dataArr: any[]): VideoInsightData {
+function parseReelInsight(dataArr: any[], videoLengthSec = 0): ReelInsight {
   const by: Record<string, any> = {};
   (dataArr || []).forEach((m: any) => (by[m.name] = m));
 
-  const getScalar = (name: string): number => {
-    const m = by[name];
-    if (!m?.values?.[0]) return 0;
-    return Number(m.values[0].value) || 0;
-  };
+  const scalar = (name: string): number => Number(by[name]?.values?.[0]?.value) || 0;
+  const breakdown = (name: string): Record<string, number> => by[name]?.values?.[0]?.value || {};
 
-  const retM = by["total_video_retention_graph_v2"];
-  const retRaw: Record<string, number> = retM?.values?.[0]?.value || {};
+  const retRaw: Record<string, number> = by["post_video_retention_graph"]?.values?.[0]?.value || {};
   const retentionCurve = Object.entries(retRaw)
-    .map(([k, v]) => ({ pct: Math.round(parseFloat(k) * 100), retention: Number(v) }))
-    .sort((a, b) => a.pct - b.pct);
+    .map(([k, v]) => {
+      const sec = parseInt(k);
+      const positionPct = videoLengthSec > 0 ? Math.min((sec / videoLengthSec) * 100, 100) : sec;
+      return { positionPct, retentionPct: Number(v) * 100 };
+    })
+    .sort((a, b) => a.positionPct - b.positionPct);
 
   return {
-    totalViews:      getScalar("total_video_views"),
-    uniqueViews:     getScalar("total_video_views_unique"),
-    completeViews:   getScalar("total_video_complete_views"),
-    avgWatchMs:      getScalar("total_video_avg_time_watched"),
-    totalViewTimeMs: getScalar("total_video_view_time"),
+    playCount:      scalar("blue_reels_play_count"),
+    totalPlays:     scalar("fb_reels_total_plays"),
+    replayCount:    scalar("fb_reels_replay_count"),
+    reach:          scalar("post_impressions_unique"),
+    avgWatchMs:     scalar("post_video_avg_time_watched"),
+    totalViewTimeMs:scalar("post_video_view_time"),
+    follows:        scalar("post_video_followers"),
+    reactions:      breakdown("post_video_likes_by_reaction_type"),
+    socialActions:  breakdown("post_video_social_actions"),
     retentionCurve,
   };
 }
@@ -147,6 +163,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
   const [fanCount,          setFanCount]           = useState<number | null>(null);
   const [posts,             setPosts]              = useState<TopPost[]>([]);
   const [videos,            setVideos]             = useState<VideoMeta[]>([]);
+  const [reelInsights,      setReelInsights]       = useState<Record<string, ReelInsight>>({});
 
   const [statusVideo,    setStatusVideo]    = useState<LoadStatus | null>(null);
   const [statusEngage,   setStatusEngage]   = useState<LoadStatus | null>(null);
@@ -162,6 +179,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     setLoading(true);
     setStatusVideo(null); setStatusEngage(null); setStatusAudience(null);
     setStatusViews(null); setStatusPosts(null); setStatusVideoList(null);
+    setReelInsights({});
 
     const { since, until } = range;
 
@@ -238,14 +256,41 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
       setStatusPosts({ ok: true });
     }).catch((e: any) => { if (!cancelled) setStatusPosts({ ok: false, error: e?.message || String(e) }); });
 
+    // g6: video list — fetch up to 20 reels, then immediately trigger per-reel insight fetch
     const g6 = metaPageGet({
       path: "videos",
       fields: "id,title,description,created_time,permalink_url,length",
       limit: "20",
-    }).then((d: any) => {
+    }).then(async (d: any) => {
       if (cancelled) return;
-      setVideos((d.data || []) as VideoMeta[]);
+      const vids: VideoMeta[] = d.data || [];
+      setVideos(vids);
       setStatusVideoList({ ok: true });
+
+      // Fetch per-reel insights for top 10 reels
+      const top = vids.slice(0, 10);
+      const ALL_REEL = [
+        "blue_reels_play_count","fb_reels_total_plays","fb_reels_replay_count",
+        "post_video_avg_time_watched","post_video_view_time","post_impressions_unique",
+        "post_video_social_actions","post_video_likes_by_reaction_type",
+        "post_video_followers","post_video_retention_graph",
+      ].join(",");
+
+      await Promise.allSettled(
+        top.map(async (v: VideoMeta) => {
+          try {
+            const rd: any = await metaPageGet({
+              path: `video_insights/${v.id}`,
+              metrics: ALL_REEL,
+              period: "lifetime",
+            });
+            if (!cancelled) {
+              const ins = parseReelInsight(rd.data || [], v.length || 0);
+              setReelInsights((prev) => ({ ...prev, [v.id]: ins }));
+            }
+          } catch (_) { /* silent per-reel failure */ }
+        })
+      );
     }).catch((e: any) => { if (!cancelled) setStatusVideoList({ ok: false, error: e?.message || String(e) }); });
 
     Promise.allSettled([g1, g2, g3, g4, g5, g6]).then(() => {
@@ -285,6 +330,20 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
   });
   const totalReactions = REACTION_KEYS.reduce((s, k) => s + (reactionTotals[k] || 0), 0);
 
+  // ── reel aggregates across all fetched reels ──────────────────────────────
+
+  const reelList = videos.filter((v) => reelInsights[v.id]);
+  const totalReelPlays   = reelList.reduce((s, v) => s + reelInsights[v.id].playCount, 0);
+  const totalReelReach   = reelList.reduce((s, v) => s + reelInsights[v.id].reach, 0);
+  const totalReelReplays = reelList.reduce((s, v) => s + reelInsights[v.id].replayCount, 0);
+  const totalReelFollows = reelList.reduce((s, v) => s + reelInsights[v.id].follows, 0);
+  const avgReplayRate    = totalReelPlays > 0 ? (totalReelReplays / totalReelPlays) * 100 : 0;
+
+  // Best reel by play count
+  const bestReel = reelList.length > 0
+    ? reelList.reduce((best, v) => reelInsights[v.id].playCount > reelInsights[best.id].playCount ? v : best)
+    : null;
+
   // ── chart data ────────────────────────────────────────────────────────────
 
   const trendChart = videoViews.map((v, i) => ({
@@ -316,22 +375,27 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     const lines: { type: "winner"|"warning"|"opportunity"|"action"; text: string }[] = [];
     if (totalViews > 0) {
       if (paidShare > 90)
-        lines.push({ type: "warning", text: `${paidShare.toFixed(0)}% of video views are paid. Organic discovery is minimal — test shorter hooks optimised for organic reach.` });
+        lines.push({ type: "warning", text: `${paidShare.toFixed(0)}% of video views are paid. Organic discovery is minimal — test shorter hooks.` });
       else if (orgShare > 20)
         lines.push({ type: "winner", text: `Organic views represent ${orgShare.toFixed(0)}% of total — stronger than average for a promoted healthcare page.` });
     }
     if (hold30Rate > 15)
-      lines.push({ type: "winner", text: `30-second hold rate of ${hold30Rate.toFixed(1)}% indicates strong early-video retention. Content is landing in the opening frames.` });
+      lines.push({ type: "winner", text: `30-second hold rate of ${hold30Rate.toFixed(1)}% indicates strong early-video retention.` });
     else if (hold30Rate > 0 && hold30Rate < 8)
-      lines.push({ type: "warning", text: `30-second hold rate is only ${hold30Rate.toFixed(1)}%. Viewers leave before key messaging — test a faster opening that surfaces the clinical benefit within 5 seconds.` });
+      lines.push({ type: "warning", text: `30-second hold rate is only ${hold30Rate.toFixed(1)}%. Test a faster opening that surfaces the clinical benefit within 5 seconds.` });
     if (netFollows > 0)
       lines.push({ type: "winner", text: `Net follower growth of +${netFollows.toLocaleString()} with a ${followRetention != null ? (followRetention * 100).toFixed(1) + "%" : "strong"} retention index.` });
-    if (repeatShare > 40)
-      lines.push({ type: "opportunity", text: `${repeatShare.toFixed(0)}% of views are repeats — content is being rewatched. Consider longer-form or follow-up educational content for this engaged segment.` });
+    if (avgReplayRate > 20)
+      lines.push({ type: "opportunity", text: `Reels average a ${avgReplayRate.toFixed(0)}% replay rate — content is being rewatched. Consider longer-form follow-up content.` });
+    if (bestReel && reelInsights[bestReel.id]?.playCount > 0) {
+      const ins = reelInsights[bestReel.id];
+      const title = bestReel.title || bestReel.description?.slice(0, 40) || "Top reel";
+      lines.push({ type: "winner", text: `"${title.slice(0, 50)}" led with ${n(ins.playCount)} plays and ${n(ins.reach)} reach.` });
+    }
     if (lines.length === 0)
       lines.push({ type: "action", text: "Narrow the date range or verify credentials if metrics show zero. Signals will populate once data loads." });
     return lines;
-  }, [totalViews, paidShare, orgShare, hold30Rate, netFollows, followRetention, repeatShare]);
+  }, [totalViews, paidShare, orgShare, hold30Rate, netFollows, followRetention, avgReplayRate, bestReel, reelInsights]);
 
   const topPosts = [...posts].sort((a, b) => b.totalEngagement - a.totalEngagement).slice(0, 15);
 
@@ -353,6 +417,9 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
     repeatShare, fanCount, totalReactions, reactionTotals, followRetention,
     unfollowPressure, trendChart, paidOrgChart, followChart, reactionChart,
     narrative, topPosts, pageViews, follows, unfollows,
+    // reel aggregates for Overview
+    reelList, totalReelPlays, totalReelReach, totalReelReplays, avgReplayRate,
+    totalReelFollows, bestReel, reelInsights,
   };
 
   return (
@@ -378,7 +445,7 @@ export default function PageInsightsTab({ hasPage }: { hasPage: boolean }) {
           {section === "community" && <CommunitySection {...sharedProps} />}
           {section === "posts"     && <PostsSection topPosts={topPosts} />}
           {section === "videos"    && <VideosSection {...sharedProps} videos={videos} statusVideoList={statusVideoList} />}
-          {section === "health"    && <HealthSection statusVideo={statusVideo} statusEngage={statusEngage} statusAudience={statusAudience} statusViews={statusViews} statusPosts={statusPosts} statusVideoList={statusVideoList} range={range} totalViews={totalViews} totalEng={totalEng} totalFollows={totalFollows} postsCount={posts.length} videoCount={videos.length} />}
+          {section === "health"    && <HealthSection statusVideo={statusVideo} statusEngage={statusEngage} statusAudience={statusAudience} statusViews={statusViews} statusPosts={statusPosts} statusVideoList={statusVideoList} range={range} totalViews={totalViews} totalEng={totalEng} totalFollows={totalFollows} postsCount={posts.length} videoCount={videos.length} reelCount={reelList.length} />}
         </>
       )}
     </div>
@@ -403,19 +470,41 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string; s
 // SECTION 1 — EXECUTIVE OVERVIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-function OverviewSection({ totalViews, totalUnique, avgWatchSec, hold30Rate, totalEng, netFollows, totalPgViews, total30s, totalPaid, totalOrganic, totalRepeat, paidShare, orgShare, repeatShare, fanCount, totalReactions, reactionTotals, trendChart, paidOrgChart, narrative }: any) {
+function OverviewSection({ totalViews, totalUnique, avgWatchSec, hold30Rate, totalEng, netFollows, totalPgViews, total30s, totalPaid, totalOrganic, totalRepeat, paidShare, orgShare, repeatShare, fanCount, totalReactions, reactionTotals, trendChart, paidOrgChart, narrative, reelList, totalReelPlays, totalReelReach, totalReelReplays, avgReplayRate, totalReelFollows, bestReel, reelInsights }: any) {
   return (
     <div>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <KpiCard label="Video Views"       value={n(totalViews)}        sub={`${n(totalUnique)} unique viewers`} color="text-[#38BDF8]" />
-        <KpiCard label="Avg Watch Time"    value={avgWatchSec > 0 ? avgWatchSec.toFixed(0) + "s" : "—"} sub="Per view" />
-        <KpiCard label="30s Hold Rate"     value={hold30Rate > 0 ? hold30Rate.toFixed(1) + "%" : "—"} sub={`${n(total30s)} reached 30s`} color={hold30Rate > 15 ? "text-[#34D399]" : "text-text"} />
-        <KpiCard label="Post Engagements"  value={n(totalEng)} sub="Likes, comments, shares" />
-        <KpiCard label="Net Follows"       value={(netFollows >= 0 ? "+" : "") + n(netFollows)} color={netFollows >= 0 ? "text-[#34D399]" : "text-[#F87171]"} sub="Follows minus unfollows" />
-        <KpiCard label="Page Followers"    value={fanCount != null ? n(fanCount) : "—"} sub="Current total" />
-        <KpiCard label="Page Views"        value={n(totalPgViews)} sub="Visits to Page profile" />
-        <KpiCard label="Total Reactions"   value={n(totalReactions)} sub={`${pct(reactionTotals["like"] || 0, totalReactions)} likes`} />
+        <KpiCard label="Video Views (page)"  value={n(totalViews)}        sub={`${n(totalUnique)} unique viewers`} color="text-[#38BDF8]" />
+        <KpiCard label="Avg Watch Time"       value={avgWatchSec > 0 ? avgWatchSec.toFixed(0) + "s" : "—"} sub="Per view (page)" />
+        <KpiCard label="30s Hold Rate"        value={hold30Rate > 0 ? hold30Rate.toFixed(1) + "%" : "—"} sub={`${n(total30s)} reached 30s`} color={hold30Rate > 15 ? "text-[#34D399]" : "text-text"} />
+        <KpiCard label="Post Engagements"     value={n(totalEng)} sub="Likes, comments, shares" />
+        <KpiCard label="Net Follows"          value={(netFollows >= 0 ? "+" : "") + n(netFollows)} color={netFollows >= 0 ? "text-[#34D399]" : "text-[#F87171]"} sub="Follows minus unfollows" />
+        <KpiCard label="Page Followers"       value={fanCount != null ? n(fanCount) : "—"} sub="Current total" />
+        <KpiCard label="Page Views"           value={n(totalPgViews)} sub="Visits to Page profile" />
+        <KpiCard label="Total Reactions"      value={n(totalReactions)} sub={`${pct(reactionTotals["like"] || 0, totalReactions)} likes`} />
       </div>
+
+      {/* Reel aggregate strip — shown if per-reel data is available */}
+      {reelList.length > 0 && (
+        <>
+          <SectionLabel>Reel Performance (per-reel data — {reelList.length} reels)</SectionLabel>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <KpiCard label="Total Reel Plays" value={n(totalReelPlays)} sub="Unique plays" color="text-[#6366F1]" />
+            <KpiCard label="Reel Reach"       value={n(totalReelReach)} sub="Unique viewers" color="text-[#38BDF8]" />
+            <KpiCard label="Replays"          value={n(totalReelReplays)} sub={`${avgReplayRate.toFixed(0)}% replay rate`} color="text-[#C084FC]" />
+            <KpiCard label="Follows from Reels" value={"+" + n(totalReelFollows)} sub="Within 24h of watch" color="text-[#34D399]" />
+            {bestReel && reelInsights[bestReel.id] && (
+              <div className="rounded-card border border-[#6366F1]/30 bg-[#0D1030] p-4">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[#8A9ADE]">Top Reel</div>
+                <div className="text-lg font-bold text-[#6366F1]">{n(reelInsights[bestReel.id].playCount)} plays</div>
+                <div className="mt-0.5 text-[10px] text-muted2 overflow-hidden text-ellipsis whitespace-nowrap" title={bestReel.title || bestReel.description}>
+                  {(bestReel.title || bestReel.description || "").slice(0, 35) || bestReel.created_time.slice(0, 10)}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="mb-3 grid grid-cols-3 gap-2">
         {[
@@ -503,7 +592,7 @@ function OverviewSection({ totalViews, totalUnique, avgWatchSec, hold30Rate, tot
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SECTION 2 — COMMUNITY HEALTH (The Tide)
+// SECTION 2 — COMMUNITY HEALTH
 // ══════════════════════════════════════════════════════════════════════════════
 
 function CommunitySection({ follows, unfollows, followChart, reactionChart, reactionTotals, pageViews, netFollows, totalFollows, totalUnfol, totalReactions, followRetention, unfollowPressure }: any) {
@@ -673,8 +762,16 @@ function PostsSection({ topPosts }: { topPosts: TopPost[] }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SECTION 4 — VIDEO PERFORMANCE (The Audience River + Per-video Insights)
+// SECTION 4 — VIDEO / REEL PERFORMANCE
 // ══════════════════════════════════════════════════════════════════════════════
+
+function retentionColor(val: number): string {
+  if (val >= 75) return "#10B981";
+  if (val >= 50) return "#34D399";
+  if (val >= 35) return "#FBBF24";
+  if (val >= 20) return "#F59E0B";
+  return "#F87171";
+}
 
 function AudienceRiver({ totalViews, totalUnique, total30s, sum30sPaid, sum30sOrganic }: any) {
   const stages = [
@@ -704,175 +801,138 @@ function AudienceRiver({ totalViews, totalUnique, total30s, sum30sPaid, sum30sOr
   );
 }
 
-function retentionColor(val: number): string {
-  if (val >= 75) return "#10B981";
-  if (val >= 50) return "#34D399";
-  if (val >= 35) return "#FBBF24";
-  if (val >= 20) return "#F59E0B";
-  return "#F87171";
-}
-
-function WatchDepthHeatmap({ videos, insights }: { videos: VideoMeta[]; insights: Record<string, VideoInsightData> }) {
+// Heatmap: normalized retention at key video positions
+function WatchDepthHeatmap({ videos, insights }: { videos: VideoMeta[]; insights: Record<string, ReelInsight> }) {
   const COLS = [0, 10, 25, 50, 75, 90, 100];
 
-  const getRetAtPct = (curve: { pct: number; retention: number }[], target: number): number | null => {
+  const getRetAt = (curve: { positionPct: number; retentionPct: number }[], targetPct: number): number | null => {
     if (!curve.length) return null;
-    const exact = curve.find((p) => p.pct === target);
-    if (exact) return exact.retention;
-    const before = curve.filter((p) => p.pct <= target).at(-1);
-    const after  = curve.find((p) => p.pct >= target);
-    if (!before || !after || before === after) return (before || after)?.retention ?? null;
-    const t = (target - before.pct) / (after.pct - before.pct);
-    return before.retention + t * (after.retention - before.retention);
+    const exact = curve.find((p) => Math.abs(p.positionPct - targetPct) < 0.5);
+    if (exact) return exact.retentionPct;
+    const before = curve.filter((p) => p.positionPct <= targetPct).at(-1);
+    const after  = curve.find((p) => p.positionPct >= targetPct);
+    if (!before && !after) return null;
+    if (!before) return after!.retentionPct;
+    if (!after)  return before.retentionPct;
+    if (before === after) return before.retentionPct;
+    const t = (targetPct - before.positionPct) / (after.positionPct - before.positionPct);
+    return before.retentionPct + t * (after.retentionPct - before.retentionPct);
   };
 
-  const rows = videos.filter((v) => insights[v.id]);
-  if (!rows.length) return (
-    <p className="py-6 text-center text-[12px] text-muted2">Loading watch-depth data…</p>
+  const rows = videos.filter((v) => insights[v.id] && insights[v.id].retentionCurve.length > 0);
+  const noRetRows = videos.filter((v) => insights[v.id] && insights[v.id].retentionCurve.length === 0);
+
+  if (!videos.filter((v) => insights[v.id]).length) return (
+    <p className="py-6 text-center text-[12px] text-muted2">Loading reel data…</p>
   );
 
   return (
-    <div className="overflow-x-auto">
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Video</th>
-            <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Views</th>
-            <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)", whiteSpace: "nowrap" }}>Avg Watch</th>
-            {COLS.map((c) => (
-              <th key={c} style={{ textAlign: "center", padding: "6px 4px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)", minWidth: 42 }}>{c}%</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((v, idx) => {
-            const ins = insights[v.id];
-            const title = v.title || v.description?.slice(0, 40) || `Video ${idx + 1}`;
-            return (
-              <tr key={v.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                <td style={{ padding: "6px 8px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {v.permalink_url
-                    ? <a href={v.permalink_url} target="_blank" rel="noopener noreferrer" style={{ color: "#C8D5DF", textDecoration: "none", borderBottom: "1px dashed rgba(56,189,248,.4)" }}>{title}</a>
-                    : <span style={{ color: "#C8D5DF" }}>{title}</span>
-                  }
-                  <span style={{ color: "rgba(200,213,220,.35)", marginLeft: 6 }}>{v.created_time.slice(0, 10)}</span>
-                </td>
-                <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{n(ins.totalViews)}</td>
-                <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{ins.avgWatchMs > 0 ? sec2str(ins.avgWatchMs / 1000) : "—"}</td>
-                {COLS.map((c) => {
-                  const val = getRetAtPct(ins.retentionCurve, c);
-                  const clr = val != null ? retentionColor(val) : "rgba(200,213,220,.15)";
-                  return (
-                    <td key={c} style={{ textAlign: "center", padding: "6px 4px" }}>
-                      <span style={{ display: "inline-block", minWidth: 38, padding: "2px 4px", borderRadius: 4, background: val != null ? clr + "22" : "transparent", color: clr, fontWeight: 700, fontSize: 10 }}>
-                        {val != null ? val.toFixed(0) + "%" : "—"}
-                      </span>
-                    </td>
-                  );
-                })}
+    <>
+      {rows.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Reel</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Plays</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)" }}>Avg Watch</th>
+                {COLS.map((c) => (
+                  <th key={c} style={{ textAlign: "center", padding: "6px 4px", color: "rgba(200,213,220,.4)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.06)", minWidth: 42 }}>{c}%</th>
+                ))}
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            </thead>
+            <tbody>
+              {rows.map((v, idx) => {
+                const ins = insights[v.id];
+                const title = v.title || v.description?.slice(0, 40) || `Reel ${idx + 1}`;
+                return (
+                  <tr key={v.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                    <td style={{ padding: "6px 8px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {v.permalink_url
+                        ? <a href={v.permalink_url} target="_blank" rel="noopener noreferrer" style={{ color: "#C8D5DF", textDecoration: "none", borderBottom: "1px dashed rgba(56,189,248,.4)" }}>{title}</a>
+                        : <span style={{ color: "#C8D5DF" }}>{title}</span>
+                      }
+                      <span style={{ color: "rgba(200,213,220,.35)", marginLeft: 6 }}>{v.created_time.slice(0, 10)}</span>
+                    </td>
+                    <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{n(ins.playCount)}</td>
+                    <td style={{ textAlign: "right", padding: "6px 8px", color: "#C8D5DF" }}>{ins.avgWatchMs > 0 ? sec2str(ins.avgWatchMs / 1000) : "—"}</td>
+                    {COLS.map((c) => {
+                      const val = getRetAt(ins.retentionCurve, c);
+                      const clr = val != null ? retentionColor(val) : "rgba(200,213,220,.15)";
+                      return (
+                        <td key={c} style={{ textAlign: "center", padding: "6px 4px" }}>
+                          <span style={{ display: "inline-block", minWidth: 38, padding: "2px 4px", borderRadius: 4, background: val != null ? clr + "22" : "transparent", color: clr, fontWeight: 700, fontSize: 10 }}>
+                            {val != null ? val.toFixed(0) + "%" : "—"}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="py-4 text-center text-[12px] text-muted2">
+          Retention data not yet available — reels need sufficient view volume for Meta to compute this metric.
+        </p>
+      )}
+      {noRetRows.length > 0 && (
+        <p className="mt-2 text-[11px] text-muted2">
+          {noRetRows.length} reel(s) loaded without retention data (likely too new or insufficient views).
+        </p>
+      )}
+    </>
   );
 }
 
-function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart, videos, statusVideoList }: any) {
+function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, totalRepeat, total30s, sum30sPaid, sum30sOrganic, totalViewMs, avgWatchSec, hold30Rate, paidShare, orgShare, paidOrgChart, videos, statusVideoList, reelInsights, reelList }: any) {
   const repeatProxy = totalViews && totalUnique ? ((totalViews - totalUnique) / totalViews) * 100 : 0;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [videoInsights, setVideoInsights] = useState<Record<string, VideoInsightData>>({});
-  const [insightErrors, setInsightErrors] = useState<Record<string, string>>({});
-  const [loadingInsights, setLoadingInsights] = useState(false);
-  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
-
+  // Auto-select first reel with insight data
   useEffect(() => {
-    if (!videos || videos.length === 0) return;
-    const top = (videos as VideoMeta[]).slice(0, 8);
-    setLoadingInsights(true);
-    setVideoInsights({});
-    setInsightErrors({});
+    if (selectedId) return;
+    const first = (videos as VideoMeta[]).find((v: VideoMeta) => reelInsights[v.id]);
+    if (first) setSelectedId(first.id);
+  }, [reelInsights, videos, selectedId]);
 
-    const BASIC = "total_video_views,total_video_views_unique,total_video_complete_views,total_video_avg_time_watched,total_video_view_time";
-    const RET_METRICS = ["total_video_retention_graph_v2", "total_video_retention_graph"];
+  const selectedReel   = selectedId ? (videos as VideoMeta[]).find((v: VideoMeta) => v.id === selectedId) : null;
+  const selectedInsight: ReelInsight | null = selectedId ? reelInsights[selectedId] ?? null : null;
 
-    // Phase 1: basic scalar metrics — isolated from retention so any metric error doesn't block the heatmap
-    Promise.allSettled(
-      top.map((v: VideoMeta) =>
-        metaPageGet({ path: `video_insights/${v.id}`, metrics: BASIC, period: "lifetime" })
-          .then((d: any) => ({ id: v.id, data: parseVideoInsightData(d.data || []) }))
-          .catch((e: any) => ({ id: v.id, error: e?.message || String(e) }))
-      )
-    ).then(async (basicResults) => {
-      const ins: Record<string, VideoInsightData> = {};
-      const errs: Record<string, string> = {};
-      basicResults.forEach((r) => {
-        if (r.status === "fulfilled") {
-          const val = r.value as any;
-          if (val.error) errs[val.id] = val.error;
-          else ins[val.id] = val.data;
-        }
-      });
-
-      // Render heatmap immediately with basic stats so UI isn't stuck
-      setVideoInsights({ ...ins });
-      const firstWithData = top.find((v: VideoMeta) => ins[v.id]);
-      if (firstWithData) setSelectedVideoId((prev: string | null) => prev ?? firstWithData.id);
-
-      // Phase 2: retention curve — one fetch per video, try v2 then fallback, silent per-video failure
-      await Promise.allSettled(
-        top
-          .filter((v: VideoMeta) => ins[v.id])
-          .map(async (v: VideoMeta) => {
-            for (const metric of RET_METRICS) {
-              try {
-                const d: any = await metaPageGet({ path: `video_insights/${v.id}`, metrics: metric, period: "lifetime" });
-                const retM = (d.data || []).find((m: any) =>
-                  m.name === "total_video_retention_graph_v2" || m.name === "total_video_retention_graph"
-                );
-                const rawVal = retM?.values?.[0]?.value;
-                if (rawVal && Object.keys(rawVal).length > 0) {
-                  const curve = Object.entries(rawVal as Record<string, number>)
-                    .map(([k, val]) => ({ pct: Math.round(parseFloat(k) * 100), retention: Number(val) }))
-                    .sort((a, b) => a.pct - b.pct);
-                  ins[v.id] = { ...ins[v.id], retentionCurve: curve };
-                  setVideoInsights((prev: Record<string, VideoInsightData>) => ({ ...prev, [v.id]: { ...ins[v.id] } }));
-                  return;
-                }
-              } catch (_) { /* try next metric */ }
-            }
-          })
-      );
-
-      setInsightErrors(errs);
-      setLoadingInsights(false);
-    });
-  }, [videos]);
-
+  // Overlaid retention chart data
   const retentionChartData = useMemo(() => {
-    const videoList = (videos as VideoMeta[]).slice(0, 8).filter((v: VideoMeta) => videoInsights[v.id]);
-    if (!videoList.length) return [];
-    const pcts = new Set<number>();
-    videoList.forEach((v: VideoMeta) => videoInsights[v.id].retentionCurve.forEach((p) => pcts.add(p.pct)));
-    const sorted = Array.from(pcts).sort((a, b) => a - b);
-    return sorted.map((p) => {
-      const row: Record<string, number | string> = { pct: p + "%" };
-      videoList.forEach((v: VideoMeta, i: number) => {
-        const curve = videoInsights[v.id].retentionCurve;
-        const exact = curve.find((c) => c.pct === p);
-        if (exact) row[`v${i}`] = exact.retention;
+    const vl = (videos as VideoMeta[]).filter((v: VideoMeta) => reelInsights[v.id]?.retentionCurve?.length > 0).slice(0, 8);
+    if (!vl.length) return [];
+    // Sample at every 5% of video
+    return Array.from({ length: 21 }, (_, i) => i * 5).map((p) => {
+      const row: Record<string, any> = { pos: p + "%" };
+      vl.forEach((v: VideoMeta, i: number) => {
+        const curve = reelInsights[v.id].retentionCurve;
+        const before = curve.filter((c: any) => c.positionPct <= p).at(-1);
+        const after  = curve.find((c: any) => c.positionPct >= p);
+        if (before && after && before !== after) {
+          const t = (p - before.positionPct) / (after.positionPct - before.positionPct);
+          row[`v${i}`] = before.retentionPct + t * (after.retentionPct - before.retentionPct);
+        } else if (before || after) {
+          row[`v${i}`] = (before || after)!.retentionPct;
+        }
       });
       return row;
     });
-  }, [videos, videoInsights]);
+  }, [videos, reelInsights]);
 
-  const videoList = (videos as VideoMeta[]).slice(0, 8).filter((v: VideoMeta) => videoInsights[v.id]);
-  const selectedInsight = selectedVideoId ? videoInsights[selectedVideoId] : null;
-  const selectedVideo   = selectedVideoId ? (videos as VideoMeta[]).find((v: VideoMeta) => v.id === selectedVideoId) : null;
+  const reelsWithData = (videos as VideoMeta[]).filter((v: VideoMeta) => reelInsights[v.id]);
+
+  // Reel leaderboard: sort by play count
+  const reelLeaderboard = [...reelsWithData].sort((a, b) =>
+    (reelInsights[b.id]?.playCount ?? 0) - (reelInsights[a.id]?.playCount ?? 0)
+  );
 
   return (
     <div>
+      {/* ── Page-level aggregate KPIs ── */}
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <KpiCard label="Total Views (3s+)"  value={n(totalViews)}                           color="text-[#6366F1]" />
         <KpiCard label="Unique Viewers"     value={n(totalUnique)}                           sub={pct(totalUnique, totalViews) + " of views"} />
@@ -882,7 +942,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
 
       <SectionLabel>The Audience River — Watch-Depth Funnel</SectionLabel>
       <Card className="mb-3">
-        <p className="mb-4 text-[11px] text-muted2">Width represents share of total 3s+ views. Flow narrows as viewers drop off at each depth threshold.</p>
+        <p className="mb-4 text-[11px] text-muted2">Width represents share of total 3s+ views (page-level aggregate).</p>
         <AudienceRiver {...{ totalViews, totalUnique, total30s, sum30sPaid, sum30sOrganic }} />
         <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
           {[
@@ -901,7 +961,7 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
 
       <SectionLabel>Paid vs Organic Distribution — Daily</SectionLabel>
       <Card className="mb-3">
-        <div style={{ height: 220 }}>
+        <div style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={paidOrgChart}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
@@ -916,68 +976,97 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
         </div>
       </Card>
 
-      {/* ── Per-video section ── */}
-      <SectionLabel>Per-Video Retention Curves</SectionLabel>
+      {/* ── Per-reel section ── */}
       {statusVideoList && !statusVideoList.ok ? (
         <div className="mb-3 rounded-card border border-[#F87171]/30 bg-[#2D0F0F] px-4 py-3 text-[12px] text-[#F87171]">
-          ✗ Could not load video list: {statusVideoList.error}
-        </div>
-      ) : videos.length === 0 && !loadingInsights ? (
-        <div className="mb-3 rounded-card border border-border bg-card px-4 py-6 text-center text-[12px] text-muted2">
-          No videos found on this Page.
+          ✗ Could not load reel list: {statusVideoList.error}
         </div>
       ) : (
         <>
-          {loadingInsights && (
-            <div className="mb-3 flex items-center gap-2 text-[12px] text-muted2">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#38BDF8] border-t-transparent" />
-              Fetching per-video insights for {Math.min(videos.length, 8)} videos…
-            </div>
+          {/* Reel selector */}
+          {reelsWithData.length > 0 && (
+            <>
+              <SectionLabel>Per-Reel Deep Dive</SectionLabel>
+              <div className="mb-3 flex flex-wrap gap-1">
+                {reelsWithData.map((v: VideoMeta, i: number) => {
+                  const title = v.title || v.description?.slice(0, 24) || `Reel ${i + 1}`;
+                  return (
+                    <button key={v.id} onClick={() => setSelectedId(v.id)}
+                      className={`rounded px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                        selectedId === v.id ? "text-white" : "bg-[#111B28] text-muted2 hover:text-text"
+                      }`}
+                      style={selectedId === v.id ? { background: VIDEO_COLORS[i % VIDEO_COLORS.length] } : {}}>
+                      {title.slice(0, 28)}{title.length > 28 ? "…" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
 
-          {videoList.length > 0 && (
-            <div className="mb-3 flex gap-1 flex-wrap">
-              {videoList.map((v: VideoMeta, i: number) => {
-                const title = v.title || v.description?.slice(0, 24) || `Video ${i + 1}`;
-                return (
-                  <button key={v.id} onClick={() => setSelectedVideoId(v.id)}
-                    className={`rounded px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                      selectedVideoId === v.id ? "text-white" : "text-muted2 hover:text-text bg-[#111B28]"
-                    }`}
-                    style={selectedVideoId === v.id ? { background: VIDEO_COLORS[i % VIDEO_COLORS.length] } : {}}>
-                    {title.slice(0, 28)}{title.length > 28 ? "…" : ""}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {selectedInsight && selectedVideo && (
+          {/* Selected reel detail */}
+          {selectedInsight && selectedReel && (
             <Card className="mb-3">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="text-[13px] font-semibold text-text">
-                  {selectedVideo.title || selectedVideo.description?.slice(0, 60) || "Selected Video"}
+                  {selectedReel.title || selectedReel.description?.slice(0, 60) || "Selected Reel"}
                 </span>
-                {selectedVideo.length && (
-                  <span className="rounded bg-[#1A2535] px-2 py-0.5 text-[10px] text-muted2">{sec2str(selectedVideo.length)} duration</span>
+                {selectedReel.length && (
+                  <span className="rounded bg-[#1A2535] px-2 py-0.5 text-[10px] text-muted2">{sec2str(selectedReel.length)} duration</span>
                 )}
-                {selectedVideo.permalink_url && (
-                  <a href={selectedVideo.permalink_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#38BDF8] underline">View on Facebook ↗</a>
+                {selectedReel.permalink_url && (
+                  <a href={selectedReel.permalink_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#38BDF8] underline">View on Facebook ↗</a>
                 )}
+                <span className="text-[10px] text-muted2">{selectedReel.created_time.slice(0, 10)}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 mb-4">
-                <KpiCard label="Total Views"    value={n(selectedInsight.totalViews)} color="text-[#6366F1]" />
-                <KpiCard label="Unique Viewers" value={n(selectedInsight.uniqueViews)} sub={pct(selectedInsight.uniqueViews, selectedInsight.totalViews) + " of views"} />
-                <KpiCard label="Completions"    value={n(selectedInsight.completeViews)} sub={pct(selectedInsight.completeViews, selectedInsight.totalViews) + " completion"} color={selectedInsight.totalViews > 0 && selectedInsight.completeViews / selectedInsight.totalViews > 0.15 ? "text-[#34D399]" : "text-text"} />
-                <KpiCard label="Avg Watch Time" value={selectedInsight.avgWatchMs > 0 ? sec2str(selectedInsight.avgWatchMs / 1000) : "—"} />
-                <KpiCard label="Total Watch"    value={ms2hm(selectedInsight.totalViewTimeMs)} />
+
+              {/* KPI row */}
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <KpiCard label="Plays (unique)"  value={n(selectedInsight.playCount)}  color="text-[#6366F1]" sub={`${n(selectedInsight.reach)} reached`} />
+                <KpiCard label="Total Plays"     value={n(selectedInsight.totalPlays)} sub={`${n(selectedInsight.replayCount)} replays (${selectedInsight.playCount > 0 ? ((selectedInsight.replayCount / selectedInsight.playCount) * 100).toFixed(0) : "—"}%)`} color="text-[#C084FC]" />
+                <KpiCard label="Avg Watch Time"  value={selectedInsight.avgWatchMs > 0 ? sec2str(selectedInsight.avgWatchMs / 1000) : "—"} sub={selectedReel.length ? `of ${sec2str(selectedReel.length)} (${((selectedInsight.avgWatchMs / 1000) / selectedReel.length * 100).toFixed(0)}% watched)` : undefined} />
+                <KpiCard label="Total Watch"     value={ms2hm(selectedInsight.totalViewTimeMs)} sub="Cumulative" />
               </div>
+
+              {/* Engagement row */}
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(() => {
+                  const reactions = Object.entries(selectedInsight.reactions).reduce((acc, [k, v]) => {
+                    const key = REACTION_API_MAP[k] || k.toLowerCase();
+                    acc[key] = (acc[key] || 0) + Number(v);
+                    return acc;
+                  }, {} as Record<string, number>);
+                  const totalRxn = Object.values(reactions).reduce((s, v) => s + v, 0);
+                  const shares = selectedInsight.socialActions["SHARE"] || 0;
+                  const comments = selectedInsight.socialActions["COMMENT"] || 0;
+                  return (
+                    <>
+                      <KpiCard label="Reactions" value={n(totalRxn)} sub={Object.entries(reactions).map(([k, v]) => `${REACTION_EMOJI[k] || k} ${v}`).join("  ")} />
+                      <KpiCard label="Shares"    value={n(shares)} color="text-[#38BDF8]" />
+                      <KpiCard label="Comments"  value={n(comments)} />
+                      <KpiCard label="Follows"   value={"+" + n(selectedInsight.follows)} sub="Within 24h of watch" color="text-[#34D399]" />
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Retention curve */}
               {selectedInsight.retentionCurve.length > 0 ? (
                 <>
-                  <div className="mb-1 text-[11px] text-muted2">Retention curve — % of viewers still watching at each point in the video</div>
-                  <div style={{ height: 200 }}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[11px] text-muted2">Audience retention — % still watching at each second through the reel</span>
+                    {selectedReel.length && (
+                      <span className="text-[10px] text-muted2">{sec2str(selectedReel.length)} total</span>
+                    )}
+                  </div>
+                  <div style={{ height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={selectedInsight.retentionCurve.map((p) => ({ pos: p.pct + "%", retention: p.retention }))}>
+                      <AreaChart data={selectedInsight.retentionCurve.map((p) => ({
+                        pos: selectedReel.length
+                          ? sec2str((p.positionPct / 100) * selectedReel.length)
+                          : p.positionPct.toFixed(0) + "%",
+                        retention: p.retentionPct,
+                      }))}>
                         <defs>
                           <linearGradient id="gRet" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#10B981" stopOpacity={0.4} />
@@ -985,47 +1074,53 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-                        <XAxis dataKey="pos" tick={TICK} interval={Math.floor(selectedInsight.retentionCurve.length / 10)} />
+                        <XAxis dataKey="pos" tick={TICK} interval={Math.max(1, Math.floor(selectedInsight.retentionCurve.length / 12))} />
                         <YAxis tick={TICK} domain={[0, 100]} unit="%" />
                         <Tooltip {...TT} formatter={(v: any) => [typeof v === "number" ? v.toFixed(1) + "%" : v, "Retention"]} />
-                        <ReferenceLine y={50} stroke="rgba(200,213,220,.15)" strokeDasharray="4 2" />
+                        <ReferenceLine y={50} stroke="rgba(200,213,220,.15)" strokeDasharray="4 2" label={{ value: "50%", position: "insideRight", fontSize: 9, fill: "rgba(200,213,220,.3)" }} />
                         <Area type="monotone" dataKey="retention" name="Retention" stroke="#10B981" fill="url(#gRet)" strokeWidth={2} dot={false} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </>
               ) : (
-                <p className="text-[11px] text-muted2 py-4 text-center">Retention curve not available for this video (requires sufficient view volume).</p>
+                <div className="rounded-card border border-border bg-[#0D1825] px-4 py-4 text-center text-[12px] text-muted2">
+                  Retention curve not yet available — reel needs more views for Meta to compute this metric.
+                </div>
               )}
             </Card>
           )}
 
-          {retentionChartData.length > 0 && videoList.length > 1 && (
+          {/* All-reels overlaid retention */}
+          {retentionChartData.length > 0 && reelsWithData.filter((v: VideoMeta) => reelInsights[v.id]?.retentionCurve?.length > 0).length > 1 && (
             <>
-              <SectionLabel>Retention Curves — All Videos Overlaid</SectionLabel>
+              <SectionLabel>Retention Curves — All Reels Overlaid</SectionLabel>
               <Card className="mb-3">
-                <p className="mb-2 text-[11px] text-muted2">Each line = one video. Higher curves = better viewer hold-through.</p>
+                <p className="mb-2 text-[11px] text-muted2">X-axis = % through the reel. Higher curves = better hold-through. Click legend to isolate.</p>
                 <div style={{ height: 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={retentionChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-                      <XAxis dataKey="pct" tick={TICK} interval={Math.floor(retentionChartData.length / 10)} />
+                      <XAxis dataKey="pos" tick={TICK} />
                       <YAxis tick={TICK} domain={[0, 100]} unit="%" />
                       <Tooltip {...TT} formatter={(v: any, name: string) => {
                         const idx = parseInt(name.replace("v", ""));
-                        const vMeta = videoList[idx] as VideoMeta;
-                        const label = vMeta?.title || vMeta?.description?.slice(0, 30) || name;
+                        const vm = reelsWithData.filter((v: VideoMeta) => reelInsights[v.id]?.retentionCurve?.length > 0)[idx] as VideoMeta;
+                        const label = vm?.title || vm?.description?.slice(0, 30) || name;
                         return [typeof v === "number" ? v.toFixed(1) + "%" : v, label];
                       }} />
                       <ReferenceLine y={50} stroke="rgba(200,213,220,.12)" strokeDasharray="4 2" />
-                      {videoList.map((_: VideoMeta, i: number) => (
-                        <Line key={i} type="monotone" dataKey={`v${i}`}
-                          stroke={VIDEO_COLORS[i % VIDEO_COLORS.length]}
-                          strokeWidth={selectedVideoId === videoList[i]?.id ? 2.5 : 1.5}
-                          dot={false}
-                          opacity={selectedVideoId && selectedVideoId !== videoList[i]?.id ? 0.35 : 1}
-                          strokeDasharray={i > 3 ? "5 3" : undefined} />
-                      ))}
+                      {reelsWithData
+                        .filter((v: VideoMeta) => reelInsights[v.id]?.retentionCurve?.length > 0)
+                        .slice(0, 8)
+                        .map((_: VideoMeta, i: number) => (
+                          <Line key={i} type="monotone" dataKey={`v${i}`}
+                            stroke={VIDEO_COLORS[i % VIDEO_COLORS.length]}
+                            strokeWidth={selectedId === reelsWithData[i]?.id ? 2.5 : 1.5}
+                            dot={false}
+                            opacity={selectedId && selectedId !== reelsWithData[i]?.id ? 0.35 : 1}
+                            strokeDasharray={i > 3 ? "5 3" : undefined} />
+                        ))}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1033,23 +1128,69 @@ function VideosSection({ totalViews, totalPaid, totalOrganic, totalUnique, total
             </>
           )}
 
+          {/* Watch-depth heatmap */}
           <SectionLabel>Watch-Depth Heatmap — Retention at Key Positions</SectionLabel>
           <Card className="mb-3">
             <p className="mb-3 text-[11px] text-muted2">
-              % of viewers still watching at each position.{" "}
-              <span style={{ color: "#10B981" }}>■ 75%+</span>{" "}
+              % of viewers still watching at 0/10/25/50/75/90/100% through the reel. Normalized by each reel&apos;s length.{" "}
+              <span style={{ color: "#10B981" }}>■ ≥75%</span>{" "}
               <span style={{ color: "#FBBF24" }}>■ 35–74%</span>{" "}
               <span style={{ color: "#F87171" }}>■ &lt;35%</span>
             </p>
-            <WatchDepthHeatmap videos={videos} insights={videoInsights} />
+            <WatchDepthHeatmap videos={videos} insights={reelInsights} />
           </Card>
 
-          {Object.keys(insightErrors).length > 0 && (
-            <div className="mb-3 rounded-card border border-[#F87171]/20 bg-[#2D0F0F] px-4 py-2.5 text-[11px] text-[#F87171]">
-              <strong>{Object.keys(insightErrors).length} video(s) failed to load basic insights.</strong>{' '}
-              First error: {Object.values(insightErrors)[0]}
-            </div>
-          )}
+          {/* Reel leaderboard */}
+          <SectionLabel>Reel Leaderboard — All Reels Ranked by Plays</SectionLabel>
+          <Card className="mb-3 overflow-x-auto">
+            <table className="dt w-full">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Date</th>
+                  <th>Reel</th>
+                  <th className="text-right">Plays</th>
+                  <th className="text-right">Reach</th>
+                  <th className="text-right">Replays</th>
+                  <th className="text-right">Reactions</th>
+                  <th className="text-right">Shares</th>
+                  <th className="text-right">Avg Watch</th>
+                  <th className="text-right">Follows</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reelLeaderboard.map((v: VideoMeta, i: number) => {
+                  const ins = reelInsights[v.id];
+                  const totalRxn = Object.values(ins.reactions).reduce((s, x) => s + Number(x), 0);
+                  const shares = ins.socialActions["SHARE"] || 0;
+                  const title = v.title || v.description?.slice(0, 50) || "—";
+                  return (
+                    <tr key={v.id} className={selectedId === v.id ? "bg-[#111B28]" : ""} onClick={() => setSelectedId(v.id)} style={{ cursor: "pointer" }}>
+                      <td className="text-muted2">{i + 1}</td>
+                      <td className="text-muted2 whitespace-nowrap">{v.created_time.slice(0, 10)}</td>
+                      <td className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">
+                        {v.permalink_url
+                          ? <a href={v.permalink_url} target="_blank" rel="noopener noreferrer" className="border-b border-dashed border-accent/40 text-[#C8D5DF] no-underline" onClick={(e) => e.stopPropagation()}>{title}</a>
+                          : <span className="text-[#C8D5DF]">{title}</span>}
+                      </td>
+                      <td className="text-right font-bold text-[#6366F1]">{n(ins.playCount)}</td>
+                      <td className="text-right">{n(ins.reach)}</td>
+                      <td className="text-right text-[#C084FC]">{n(ins.replayCount)}</td>
+                      <td className="text-right">{n(totalRxn)}</td>
+                      <td className="text-right text-[#38BDF8]">{n(shares)}</td>
+                      <td className="text-right">{ins.avgWatchMs > 0 ? sec2str(ins.avgWatchMs / 1000) : "—"}</td>
+                      <td className="text-right text-[#34D399]">{ins.follows > 0 ? "+" + ins.follows : "—"}</td>
+                    </tr>
+                  );
+                })}
+                {reelLeaderboard.length === 0 && (
+                  <tr><td colSpan={10} className="py-6 text-center text-muted2">
+                    {videos.length === 0 ? "No reels found on this Page." : "Loading reel insights…"}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
         </>
       )}
     </div>
@@ -1074,14 +1215,14 @@ function StatusRow({ label, status }: { label: string; status: LoadStatus | null
   );
 }
 
-function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews, statusPosts, statusVideoList, range, totalViews, totalEng, totalFollows, postsCount, videoCount }: any) {
+function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews, statusPosts, statusVideoList, range, totalViews, totalEng, totalFollows, postsCount, videoCount, reelCount }: any) {
   const groups = [
     { label: "Page video metrics — 9 metrics, Group 1",        status: statusVideo },
     { label: "Page engagement metrics — Group 2",              status: statusEngage },
     { label: "Audience follow/unfollow metrics — Group 3",     status: statusAudience },
     { label: "Page views metric — Group 4",                    status: statusViews },
     { label: "Profile fan_count + published posts — Group 5",  status: statusPosts },
-    { label: "Page video list (per-video insights) — Group 6", status: statusVideoList },
+    { label: "Reel list + per-reel insights — Group 6",        status: statusVideoList },
   ];
   const okCount   = groups.filter((g) => g.status?.ok).length;
   const failCount = groups.filter((g) => g.status && !g.status.ok).length;
@@ -1104,11 +1245,12 @@ function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews,
       <Card className="mb-3">
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           {[
-            { label: "Video Views Loaded", value: n(totalViews) },
-            { label: "Post Engagements",   value: n(totalEng) },
-            { label: "Posts Loaded",       value: String(postsCount) },
-            { label: "Videos Loaded",      value: String(videoCount) },
-            { label: "New Follows",        value: n(totalFollows) },
+            { label: "Video Views Loaded",   value: n(totalViews) },
+            { label: "Post Engagements",      value: n(totalEng) },
+            { label: "Posts Loaded",          value: String(postsCount) },
+            { label: "Reels Found",           value: String(videoCount) },
+            { label: "Reels with Insights",   value: String(reelCount) },
+            { label: "New Follows",           value: n(totalFollows) },
           ].map(({ label, value }) => (
             <div key={label}>
               <div className="text-[10px] font-bold uppercase text-muted2">{label}</div>
@@ -1117,6 +1259,16 @@ function HealthSection({ statusVideo, statusEngage, statusAudience, statusViews,
           ))}
         </div>
       </Card>
+
+      <div className="mb-3 rounded-card border border-[#38BDF8]/20 bg-[#0C2D3F] px-4 py-3 text-[12px] text-[#38BDF8] leading-relaxed">
+        <strong className="text-[#C8D5DF]">Reel metrics used:</strong>{" "}
+        <code>blue_reels_play_count</code> (unique plays), <code>fb_reels_total_plays</code> (incl. replays),
+        <code>fb_reels_replay_count</code>, <code>post_impressions_unique</code> (reach),
+        <code>post_video_avg_time_watched</code>, <code>post_video_view_time</code>,
+        <code>post_video_retention_graph</code> (seconds-keyed, fraction values),
+        <code>post_video_social_actions</code>, <code>post_video_likes_by_reaction_type</code>,
+        <code>post_video_followers</code>.
+      </div>
 
       <div className="rounded-card border border-border bg-card px-4 py-3 text-[12px] text-muted2 leading-relaxed">
         <strong className="text-[#C8D5DF]">Token validity:</strong> Long-lived Page token expires ~mid-September 2026.
